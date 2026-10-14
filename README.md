@@ -20,7 +20,7 @@ and analytics code tangled with gameplay Blueprints.
 - `Plugins/SessionAnalytics/` – the plugin (source, tests, settings)
 - `Source/SessionAnalyticsDemo/` – demo module with `AAnalyticsDemoActor`, which fires a scripted set of events including one duplicate
 - `Content/Maps/AnalyticsDemo.umap` – demo map (one `AnalyticsDemoActor`); `Scripts/create_demo_map.py` recreates it headless
-- Open `SessionAnalyticsDemo.uproject` with UE 5.7, build, press Play: the CSV appears under `Saved/Analytics/`
+- Open `SessionAnalyticsDemo.uproject` with UE 5.8 (also builds on 5.7: right-click the .uproject > Switch Unreal Engine version), build, press Play: the CSV appears under `Saved/Analytics/`
 
 ## Install
 1. Copy `Plugins/SessionAnalytics` from this repo to `<YourProject>/Plugins/SessionAnalytics`.
@@ -75,7 +75,7 @@ Headless run:
 UnrealEditor-Cmd <Project>.uproject -ExecCmds="Automation RunTests SessionAnalytics; Quit" -unattended -nullrhi
 ```
 
-Verified on UE 5.7.4 (Win64, Editor target): build OK, all 7 tests pass, demo map produces the CSV above.
+Verified on UE 5.8.3 and UE 5.7.4 (Win64, Editor target): build OK, all 7 tests pass, demo map produces the CSV above.
 A forced kill after 5 seconds still left `session_start` on disk thanks to the periodic flush.
 
 ## Design notes

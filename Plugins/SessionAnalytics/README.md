@@ -69,7 +69,7 @@ Headless run:
 UnrealEditor-Cmd <Project>.uproject -ExecCmds="Automation RunTests SessionAnalytics; Quit" -unattended -nullrhi
 ```
 
-Verified on UE 5.7.4 (Win64, Editor target): build OK, all 7 tests pass, demo map produces the CSV above.
+Verified on UE 5.8.3 and UE 5.7.4 (Win64, Editor target): build OK, all 7 tests pass, demo map produces the CSV above.
 A forced kill after 5 seconds still left `session_start` on disk thanks to the periodic flush.
 
 ## Design notes
