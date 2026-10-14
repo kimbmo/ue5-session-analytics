@@ -1,0 +1,18 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Session Analytics",
+	"Description": "Lightweight session/event analytics with duplicate suppression and CSV export.",
+	"Category": "Analytics",
+	"CreatedBy": "비모",
+	"EngineVersion": "5.7.0",
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "SessionAnalytics",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
