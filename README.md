@@ -20,7 +20,30 @@ and analytics code tangled with gameplay Blueprints.
 - `Plugins/SessionAnalytics/` – the plugin (source, tests, settings)
 - `Source/SessionAnalyticsDemo/` – demo module with `AAnalyticsDemoActor`, which fires a scripted set of events including one duplicate
 - `Content/Maps/AnalyticsDemo.umap` – demo map (one `AnalyticsDemoActor`); `Scripts/create_demo_map.py` recreates it headless
-- Open `SessionAnalyticsDemo.uproject` with UE 5.8 (also builds on 5.7: right-click the .uproject > Switch Unreal Engine version), build, press Play: the CSV appears under `Saved/Analytics/`
+- `Content/EscapeRoom/` – escape-room prototype built on the plugin (see below); `L_Studio` is the default map
+- Plugin demo: open `SessionAnalyticsDemo.uproject` with UE 5.8 (the plugin and demo also build on 5.7: right-click the .uproject > Switch Unreal Engine version), build, open `Content/Maps/AnalyticsDemo` and press Play, or run it directly:
+  ```
+  UnrealEditor.exe SessionAnalyticsDemo.uproject /Game/Maps/AnalyticsDemo -game -windowed
+  ```
+  The CSV appears under `Saved/Analytics/`.
+
+## Escape room prototype
+A 3-minute first-person escape room in a painter's studio, built to show the plugin in a real game loop.
+Three puzzles run in sequence (find, combine, order); if the player makes no progress, two staged hints light up the
+relevant objects. Every play session is logged to CSV by this plugin: puzzle start/solve with attempt counts,
+wrong answers, hints shown, objects inspected and the escape time.
+
+| | | |
+|---|---|---|
+| ![Room overview](Docs/EscapeRoom/room_overview.png) | ![Hint: date labels glow](Docs/EscapeRoom/hint_date_labels.png) | ![Safe with frame-silhouette order clue](Docs/EscapeRoom/safe_silhouette_clue.png) |
+| The studio | A hint lighting up the date labels | Safe dials with a text-free order clue |
+
+- **Play:** open the project in **UE 5.8** (the escape-room assets are saved in 5.8), open `Content/EscapeRoom/L_Studio`, press Play and click the viewport. WASD to move, mouse to look, E to interact.
+- **Code:** all gameplay logic is C++ in `Source/SessionAnalyticsDemo/EscapeRoom` (room manager, interactables, character, HUD).
+  The Blueprints in `Content/EscapeRoom/Blueprints` are thin subclasses, so every tuning value (hint delays, safe code, hint and light tags) is editable in the Details panel.
+- **Autoplay (development builds only):** the console command `Escape.Autoplay [hintDelaySeconds] [quit]` plays the room start to finish through the real E trace,
+  takes screenshots into `Saved/Screenshots/EscapeRoom/` and leaves a full CSV. `Scripts/create_escape_room.py` rebuilds the level headless.
+- **Guide (Korean):** `Content/EscapeRoom/README_EscapeRoom.md` explains the class roles, tuning values, events and how to play.
 
 ## Install
 1. Copy `Plugins/SessionAnalytics` from this repo to `<YourProject>/Plugins/SessionAnalytics`.
