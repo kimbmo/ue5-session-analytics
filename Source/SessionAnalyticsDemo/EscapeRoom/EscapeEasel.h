@@ -28,6 +28,13 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Escape")
 	TObjectPtr<UStaticMeshComponent> EmptyPatch;
 
+	/** Border around the empty patch in the lamp's green: links "fill this" to "the lamp's colour". */
+	UPROPERTY(VisibleAnywhere, Category = "Escape")
+	TObjectPtr<UStaticMeshComponent> EmptyPatchBorder;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Escape|Easel")
+	FLinearColor PatchBorderColor = FLinearColor(0.05f, 0.75f, 0.12f);
+
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;

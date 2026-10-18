@@ -2,10 +2,13 @@
 
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/MeshComponent.h"
 #include "EscapeRoom/EscapeInteractable.h"
+#include "EscapeRoom/EscapeVisuals.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "Kismet/KismetSystemLibrary.h"
 
 #define LOCTEXT_NAMESPACE "EscapeRoom"
 
@@ -18,7 +21,8 @@ AEscapeCharacter::AEscapeCharacter()
 
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(GetCapsuleComponent());
-	Camera->SetRelativeLocation(FVector(0.f, 0.f, 70.f));
+	// Eye at 152 cm: v1 testers found desk, paints and safe too far below the view at 160 cm.
+	Camera->SetRelativeLocation(FVector(0.f, 0.f, 62.f));
 	Camera->bUsePawnControlRotation = true;
 	Camera->SetFieldOfView(85.f);
 }
@@ -71,6 +75,12 @@ void AEscapeCharacter::ReadInput()
 	{
 		Interact();
 	}
+
+	// Playtest builds have no menu: Esc quits. The analytics session is closed on shutdown (reason recorded by the plugin).
+	if (PC->WasInputKeyJustPressed(EKeys::Escape))
+	{
+		UKismetSystemLibrary::QuitGame(this, PC, EQuitPreference::Quit, false);
+	}
 }
 
 bool AEscapeCharacter::TraceView(FHitResult& OutHit) const
@@ -83,12 +93,16 @@ bool AEscapeCharacter::TraceView(FHitResult& OutHit) const
 
 bool AEscapeCharacter::Interact()
 {
-	FHitResult Hit;
-	if (!TraceView(Hit))
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (Now - LastInteractTime < InteractCooldownSeconds)
 	{
 		return false;
 	}
-	AEscapeInteractable* Target = Cast<AEscapeInteractable>(Hit.GetActor());
+	LastInteractTime = Now;
+
+	FHitResult Hit;
+	AEscapeInteractable* Target = TraceView(Hit) ? Cast<AEscapeInteractable>(Hit.GetActor()) : nullptr;
+	bLastInteractHit = Target != nullptr;
 	if (!Target)
 	{
 		return false;
@@ -97,11 +111,35 @@ bool AEscapeCharacter::Interact()
 	return true;
 }
 
+float AEscapeCharacter::GetSecondsSinceInteract() const
+{
+	return GetWorld() ? static_cast<float>(GetWorld()->GetTimeSeconds() - LastInteractTime) : 1000.f;
+}
+
+void AEscapeCharacter::SetFocus(UPrimitiveComponent* Component)
+{
+	if (FocusComponent.Get() == Component)
+	{
+		return;
+	}
+	// The room manager rewrites the glow of active hint targets every tick, so clearing here never hides a hint.
+	if (UMeshComponent* Previous = Cast<UMeshComponent>(FocusComponent.Get()))
+	{
+		EscapeVisuals::SetHintGlow(Previous, 0.f);
+	}
+	FocusComponent = Component;
+	if (UMeshComponent* Current = Cast<UMeshComponent>(Component))
+	{
+		EscapeVisuals::SetHintGlow(Current, FocusHighlight);
+	}
+}
+
 void AEscapeCharacter::UpdateFocus()
 {
 	FHitResult Hit;
 	const AEscapeInteractable* Target = TraceView(Hit) ? Cast<AEscapeInteractable>(Hit.GetActor()) : nullptr;
 	FocusPrompt = Target ? FText::Format(LOCTEXT("Prompt", "[E] {0}"), Target->GetPrompt(Hit.GetComponent())) : FText::GetEmpty();
+	SetFocus(Target ? Hit.GetComponent() : nullptr);
 }
 
 #undef LOCTEXT_NAMESPACE

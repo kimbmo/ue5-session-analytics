@@ -25,8 +25,8 @@
 | `AEscapeEasel` | 이젤. 빈 칸이 퍼즐2 정답 후 초록으로 채워짐 |
 | `AEscapeSafe` | 다이얼 4개 + 손잡이 금고. 다이얼 위 액자 실루엣(순서 단서) |
 | `AEscapeDoor` | 출구 문 + 초록 램프 |
-| `AEscapeCharacter` | 1인칭 이동, E 트레이스, 크로스헤어 아래 프롬프트 |
-| `AEscapeHUD` | Slate 화면 표시: 크로스헤어, 프롬프트, 메시지, 퍼즐/시간, 소지품, 팔레트 |
+| `AEscapeCharacter` | 1인칭 이동, E 트레이스, 바라보는 부분 하이라이트, Esc 종료 |
+| `AEscapeHUD` | Slate 화면 표시: 크로스헤어(대상 있으면 노랑, E 누르면 반응), 프롬프트, 메시지, 힌트 문구, 퍼즐, 소지품, 팔레트 |
 | `AEscapeGameMode` | 위 캐릭터와 HUD 사용 |
 | `EscapeAutoplay.cpp` | 개발용 콘솔 명령 `Escape.Autoplay` (아래) |
 
@@ -35,10 +35,10 @@
 
 ## 튜닝 값 (코드 수정 없이 Details 패널)
 **EscapeRoomManager**
-- `HintDelay1` 30초 / `HintDelay2` 60초: 진행 없이 이 시간이 지나면 힌트 1 / 2. "진행" = 현재 퍼즐에 속한 물체를 살펴보거나 답을 입력(다이얼 돌리기 포함).
+- `HintDelay1` 30초 / `HintDelay2` 60초: 마지막 "실제 단계" 뒤로 이 시간이 지나면 힌트 1 / 2. 실제 단계는 퍼즐 시작과 서랍 열기뿐이고, 살펴보기·다이얼·오답으로는 타이머가 다시 시작되지 않는다. (v1 플레이테스트에서 E를 연타하던 사람이 힌트를 못 받아서 바꿈)
 - `HintGlowStrength`, `HintPulseSpeed`, `SequenceStepSeconds`: 힌트 빛의 세기, 깜빡임 속도, 순차 힌트 간격.
 - `Puzzles[0..2]`: 퍼즐별 힌트 태그(`Hint1Tag`/`Hint2Tag`), 조명 태그(`LightTag`), 힌트2 순차 여부, 힌트 문구.
-- `CorrectPaintA/B` (blue/yellow), `SafeCode` (3715), `SafeCover`, `InactiveLightScale` (다른 퍼즐 조명 밝기 비율), `MessageSeconds` (2초).
+- `CorrectPaintA/B` (blue/yellow), `SafeCode` (3715), `SafeCover`, `InactiveLightScale` (다른 퍼즐 조명 밝기 비율), `MessageSeconds` (3초), `HintMessageSeconds` (힌트 문구 4초, 화면 위 가운데), `HandleCooldownSeconds` (금고 손잡이 연타 무시 1초), `bShowElapsedTime` (경과 시간 표시, 기본 꺼짐).
 - `SafeCode`가 액자 물체 수와 다르면 Play 시 경고가 화면/로그에 뜬다.
 
 **태그로 힌트 대상과 조명 지정**
@@ -46,7 +46,7 @@
 - 기본값: 메모 `P1H1`, 액자 날짜 라벨(컴포넌트) `P1H2`, 램프(컴포넌트) `P2H1`, 파랑·노랑 물감 `P2H2`, 액자 `P3H1`·`P3H2`(작은 것부터 순차).
 - 조명: `Light_P1`/`Light_P2`/`Light_P3` 태그가 붙은 라이트는 해당 퍼즐일 때만 원래 밝기, 아니면 `InactiveLightScale` 배.
 
-**물체별**: 금고 `SilhouetteMaxSize`(가장 큰 실루엣 크기), `SilhouetteColor` / 액자 `DateLabel`, `FrameSize`, `ObjectCount`, 색 / 물감 `PaintId`, `ColorName`, `PaintColor` / 문 `LampColor` / 모든 물체 `ObjectId`(로그 이름), `InspectMessage`, `PuzzleIds` / 캐릭터 `InteractDistance`(250), `MouseSensitivity`, `WalkSpeed`.
+**물체별**: 금고 `SilhouetteMaxSize`(가장 큰 실루엣 크기), `SilhouetteColor` / 액자 `DateLabel`, `LabelTextSize`(날짜 글자 높이, 10cm), `FrameSize`, `ObjectCount`, 색 / 물감 `PaintId`, `ColorName`, `PaintColor` / 문 `LampColor` / 모든 물체 `ObjectId`(로그 이름), `InspectMessage`, `PuzzleIds` / 캐릭터 `InteractDistance`(250), `FocusHighlight`, `InteractCooldownSeconds`(0.2초), `MouseSensitivity`(0.5), `WalkSpeed`.
 
 ## 기록되는 이벤트 (CSV `event`, `params`)
 | 이벤트 | 파라미터 | 시점 |

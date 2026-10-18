@@ -52,8 +52,7 @@ AEscapeFrame::AEscapeFrame()
 	LabelText->SetupAttachment(SceneRoot);
 	LabelText->SetHorizontalAlignment(EHTA_Center);
 	LabelText->SetVerticalAlignment(EVRTA_TextCenter);
-	LabelText->SetWorldSize(6.f);
-	LabelText->SetTextRenderColor(FColor(235, 225, 200));
+		LabelText->SetTextRenderColor(FColor(235, 225, 200));
 	LabelText->ComponentTags.Add(TEXT("P1H2"));
 
 	Key = EscapeVisuals::CreatePart(this, TEXT("Key"), EscapeVisuals::Cube);
@@ -121,9 +120,11 @@ void AEscapeFrame::Layout()
 	}
 	EscapeVisuals::SetColor(Objects, ObjectColor);
 
-	const float LabelZ = -(H * 0.5f + BorderWidth + 9.f);
+	// Plate sized from the text: about 5 characters wide plus margins.
+	const float LabelZ = -(H * 0.5f + BorderWidth + LabelTextSize * 0.9f + 3.f);
 	LabelPlate->SetRelativeLocation(FVector(0.6f, 0.f, LabelZ));
-	LabelPlate->SetRelativeScale3D(FVector(0.012f, 0.32f, 0.09f));
+	LabelPlate->SetRelativeScale3D(FVector(0.012f, LabelTextSize * 5.0f / 100.f, LabelTextSize * 1.5f / 100.f));
+	LabelText->SetWorldSize(LabelTextSize);
 	EscapeVisuals::SetColor(LabelPlate, PlateColor);
 
 	LabelText->SetRelativeLocation(FVector(1.4f, 0.f, LabelZ));

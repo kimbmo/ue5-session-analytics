@@ -59,16 +59,20 @@ public:
 
 	// ---- Tuning ----
 
-	/** Seconds without progress before hint 1. */
+	/**
+	 * Seconds since the last real step before hint 1. Real steps are only the puzzle starting and the drawer opening:
+	 * inspecting objects, turning dials and wrong answers do not reset the timer (v1 playtest: players who kept
+	 * pressing E on things never got a hint).
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Escape|Hints", meta = (ClampMin = "1"))
 	float HintDelay1 = 30.f;
 
-	/** Seconds without progress before hint 2. */
+	/** Seconds since the last real step before hint 2. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Escape|Hints", meta = (ClampMin = "1"))
 	float HintDelay2 = 60.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Escape|Hints", meta = (ClampMin = "0"))
-	float HintGlowStrength = 2.5f;
+	float HintGlowStrength = 5.f;
 
 	/** Pulses per second of a glowing hint target. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Escape|Hints", meta = (ClampMin = "0"))
@@ -110,14 +114,20 @@ public:
 
 	/** Seconds an on-screen message stays. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Escape|UI", meta = (ClampMin = "0.5"))
-	float MessageSeconds = 2.f;
+	float MessageSeconds = 3.f;
+
+	/** Seconds a hint line stays near the screen centre. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Escape|UI", meta = (ClampMin = "0.5"))
+	float HintMessageSeconds = 4.f;
+
+	/** Pulls of the safe handle inside this many seconds are ignored (stops double-logged wrong codes). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Escape|Puzzles", meta = (ClampMin = "0"))
+	float HandleCooldownSeconds = 1.f;
 
 	// ---- Called by interactables ----
 
-	/** Logs object_inspected{object}. Counts as progress if the object belongs to the current puzzle (or PuzzleOverride does). */
-	void NotifyInspected(const AEscapeInteractable* Source, const FString& Id, int32 PuzzleOverride = 0);
-	/** Progress without a log row (e.g. turning a safe dial). */
-	void NotifyProgress(int32 Puzzle);
+	/** Logs object_inspected{object}. Does not reset the hint timer. */
+	void NotifyInspected(const AEscapeInteractable* Source, const FString& Id);
 
 	void HandleFrame(AEscapeFrame* Frame);
 	void HandleDrawer(AEscapeDesk* Desk);
@@ -140,6 +150,8 @@ public:
 	float GetElapsedSeconds() const;
 	int32 GetHintsUsed() const { return HintsUsed; }
 	const FText& GetMessage() const { return Message; }
+	const FText& GetHintMessage() const { return HintMessage; }
+	bool IsHintMessageVisible() const;
 	bool IsMessageVisible() const;
 	FText GetStatusText() const;
 	FText GetInventoryText() const;
@@ -196,7 +208,7 @@ private:
 	int32 HintLevel = 0;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Escape|State")
-	float IdleSeconds = 0.f;
+	float SecondsSinceStep = 0.f;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Escape|State")
 	int32 HintsUsed = 0;
@@ -211,4 +223,7 @@ private:
 	double EscapeTime = 0.0;
 	double MessageUntil = 0.0;
 	FText Message;
+	double HintMessageUntil = 0.0;
+	FText HintMessage;
+	double LastHandleTime = -1000.0;
 };

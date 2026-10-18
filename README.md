@@ -44,6 +44,8 @@ wrong answers, hints shown, objects inspected and the escape time.
 - **Autoplay (development builds only):** the console command `Escape.Autoplay [hintDelaySeconds] [quit]` plays the room start to finish through the real E trace,
   takes screenshots into `Saved/Screenshots/EscapeRoom/` and leaves a full CSV. `Scripts/create_escape_room.py` rebuilds the level headless.
 - **Guide (Korean):** `Content/EscapeRoom/README_EscapeRoom.md` explains the class roles, tuning values, events and how to play.
+- **Playtests:** `Docs/Playtest/` holds the raw CSVs (v1: 3 plays, v2: 1 play), the v1 analysis (`analysis_v1.md`) and the v2 change list (`changes_v2.md`) that came out of it.
+  Rerun the summary with `python Scripts/analyze_playtest.py Docs/Playtest/data/v1` (or `data/v2`).
 
 ## Install
 1. Copy `Plugins/SessionAnalytics` from this repo to `<YourProject>/Plugins/SessionAnalytics`.

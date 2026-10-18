@@ -45,6 +45,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Escape|Frame")
 	FLinearColor ObjectColor = FLinearColor(0.7f, 0.1f, 0.1f);
 
+	/** Height of the date digits in cm (v1: 6 cm was only readable from about 2 m; v2: 10 cm). The plate scales with it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Escape|Frame", meta = (ClampMin = "2"))
+	float LabelTextSize = 10.f;
+
 	/** Message when the frame is lifted and nothing is behind it. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Escape|Frame")
 	FText EmptyMessage;

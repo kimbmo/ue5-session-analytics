@@ -24,15 +24,29 @@ public:
 
 	/** Prompt for the object under the crosshair, or empty. */
 	const FText& GetFocusPrompt() const { return FocusPrompt; }
+	bool HasFocus() const { return FocusComponent.IsValid(); }
+	/** Seconds since E was last pressed, and whether that press hit something interactable (for crosshair feedback). */
+	float GetSecondsSinceInteract() const;
+	bool LastInteractHit() const { return bLastInteractHit; }
+	/** Lets scripted input (autoplay) press E several times in one frame. */
+	void ResetInteractCooldown() { LastInteractTime = -1000.0; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Escape|Player", meta = (ClampMin = "50"))
 	float InteractDistance = 250.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Escape|Player", meta = (ClampMin = "0.05"))
-	float MouseSensitivity = 1.f;
+	float MouseSensitivity = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Escape|Player", meta = (ClampMin = "50"))
 	float WalkSpeed = 320.f;
+
+	/** Glow added to the part under the crosshair so the player sees what E will use. 0 = off. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Escape|Player", meta = (ClampMin = "0"))
+	float FocusHighlight = 0.6f;
+
+	/** E presses closer together than this are ignored. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Escape|Player", meta = (ClampMin = "0"))
+	float InteractCooldownSeconds = 0.2f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Escape")
 	TObjectPtr<UCameraComponent> Camera;
@@ -46,5 +60,10 @@ private:
 	void ReadInput();
 	void UpdateFocus();
 
+	void SetFocus(UPrimitiveComponent* Component);
+
 	FText FocusPrompt;
+	TWeakObjectPtr<UPrimitiveComponent> FocusComponent;
+	double LastInteractTime = -1000.0;
+	bool bLastInteractHit = false;
 };

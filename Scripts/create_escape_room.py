@@ -197,7 +197,9 @@ block("Wall_+X_R", (310, 182.5, 150), (20, 255, 300), mi_wall)
 block("Wall_+X_Top", (310, 0, 260), (20, 110, 80), mi_wall)
 block("Exit_Floor", (420, 0, -10), (200, 200, 20), mi_floor, folder="Exit")
 block("Exit_Glow", (480, 0, 150), (20, 300, 320), mi_exit, folder="Exit")
-block("PaintStool", (-110, -262, 30), (80, 36, 60), mi_stool, folder="Props")
+# v2: stool 80 cm and safe on a 35 cm plinth (v1 testers found the props too low for the 152 cm eye height).
+block("PaintStool", (-110, -262, 40), (80, 36, 80), mi_stool, folder="Props")
+block("SafePlinth", (-200, 222, 17.5), (84, 74, 35), mi_stool, folder="Props")
 
 start = spawn(unreal.PlayerStart, (-220, 0, 100), 0.0, "PlayerStart")
 
@@ -229,14 +231,14 @@ easel = spawn(bp["BP_Easel"], (-215, -215, 0), 45.0, "Easel")
 paints = [("red", "빨강", (0.75, 0.06, 0.05), -135.0), ("blue", "파랑", (0.04, 0.12, 0.75), -110.0),
           ("yellow", "노랑", (0.95, 0.75, 0.05), -85.0)]
 for pid, name, color, x in paints:
-    paint = spawn(bp["BP_Paint"], (x, -258, 60), 90.0, "Paint_" + pid)
+    paint = spawn(bp["BP_Paint"], (x, -258, 80), 90.0, "Paint_" + pid)
     set_props(paint, object_id="paint_" + pid, paint_id=pid, color_name=name, display_name=name + " 물감",
               paint_color=unreal.LinearColor(*color, 1.0))
     if pid in ("blue", "yellow"):
         set_tags(paint, "P2H2")
 
-safe = spawn(bp["BP_Safe"], (-200, 220, 0), -90.0, "Safe")
-cover = spawn(bp["BP_Inspectable"], (-200, 218, 50), 0.0, "SafeCover")
+safe = spawn(bp["BP_Safe"], (-200, 220, 35), -90.0, "Safe")
+cover = spawn(bp["BP_Inspectable"], (-200, 218, 85), 0.0, "SafeCover")
 set_props(cover, object_id="cover", display_name="천 덮개", inspect_message="무거운 천이 덮여 있다. 단단히 고정돼 있어 들출 수 없다.",
           base_color=unreal.LinearColor(0.38, 0.1, 0.1, 1.0))
 cover.set_actor_scale3d(unreal.Vector(0.96, 0.86, 1.0))

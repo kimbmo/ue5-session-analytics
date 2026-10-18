@@ -41,7 +41,6 @@ namespace
 			{
 				Manager->HintDelay1 = HintDelay;
 				Manager->HintDelay2 = HintDelay * 2.f;
-				Manager->NotifyProgress(Manager->GetCurrentPuzzle());
 			}
 			if (bCeilingOnly)
 			{
@@ -175,6 +174,7 @@ namespace
 			AEscapeCharacter* Player = GetPlayer();
 			for (int32 Count = 0; Player && Count < Times; ++Count)
 			{
+				Player->ResetInteractCooldown();
 				if (!Player->Interact())
 				{
 					UE_LOG(LogEscapeAutoplay, Error, TEXT("Autoplay: trace missed %s"), *GetNameSafe(Component));

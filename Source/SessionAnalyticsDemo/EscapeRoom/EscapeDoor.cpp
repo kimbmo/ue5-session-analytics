@@ -83,7 +83,7 @@ void AEscapeDoor::Interact(AEscapeCharacter* Player, UPrimitiveComponent* HitCom
 	}
 	if (HitComponent == Lamp)
 	{
-		Manager->NotifyInspected(this, TEXT("lamp"), 2);
+		Manager->NotifyInspected(this, TEXT("lamp"));
 		Manager->ShowMessage(LampMessage);
 		return;
 	}

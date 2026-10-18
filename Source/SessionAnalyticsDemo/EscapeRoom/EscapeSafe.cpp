@@ -126,7 +126,6 @@ void AEscapeSafe::ApplyColors()
 	for (int32 Index = 0; Index < SilhouetteOutlines.Num(); ++Index)
 	{
 		EscapeVisuals::SetColor(SilhouetteOutlines[Index], SilhouetteColor);
-		EscapeVisuals::SetColor(SilhouetteFills[Index], SafeColor * 1.3f);
 	}
 	UpdateDialTexts();
 	UpdateSilhouettes();
@@ -166,6 +165,8 @@ void AEscapeSafe::UpdateSilhouettes()
 		SilhouetteOutlines[Index]->SetRelativeLocation(FVector(3.2f, SlotY(Index), CenterZ));
 		SilhouetteOutlines[Index]->SetRelativeScale3D(FVector(0.004f, Size.X / 100.f, Size.Y / 100.f));
 		SilhouetteFills[Index]->SetRelativeLocation(FVector(3.5f, SlotY(Index), CenterZ));
+		// Filled with that painting's background colour, so each silhouette points at exactly one frame.
+		EscapeVisuals::SetColor(SilhouetteFills[Index], Frames[Index]->CanvasColor);
 		SilhouetteFills[Index]->SetRelativeScale3D(FVector(0.004f,
 			FMath::Max(Size.X - 2.f * SilhouetteLine, 0.5f) / 100.f, FMath::Max(Size.Y - 2.f * SilhouetteLine, 0.5f) / 100.f));
 	}
@@ -223,10 +224,6 @@ void AEscapeSafe::Interact(AEscapeCharacter* Player, UPrimitiveComponent* HitCom
 	{
 		DialValues[Dial] = (DialValues[Dial] + 1) % 10;
 		UpdateDialTexts();
-		if (Manager)
-		{
-			Manager->NotifyProgress(3);
-		}
 		return;
 	}
 	if (HitComponent == Handle)

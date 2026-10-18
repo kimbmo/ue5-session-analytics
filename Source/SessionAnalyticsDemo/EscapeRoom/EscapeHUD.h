@@ -5,6 +5,7 @@
 #include "GameFramework/HUD.h"
 #include "EscapeHUD.generated.h"
 
+class AEscapeCharacter;
 class AEscapeRoomManager;
 class SWidget;
 
@@ -22,6 +23,8 @@ private:
 	AEscapeRoomManager* GetManager() const;
 	FText GetPrompt() const;
 	FText GetMessage() const;
+	FText GetHintMessage() const;
+	const AEscapeCharacter* GetPlayerCharacter() const;
 
 	TSharedPtr<SWidget> Overlay;
 	/** Dark backing behind the top-left status block, so it reads as UI and not as writing on the ceiling. */

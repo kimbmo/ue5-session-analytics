@@ -50,7 +50,8 @@ public:
 
 	/**
 	 * Order clue: one frame-outline silhouette above each dial, shaped like the frame whose count goes into that dial
-	 * (smallest frame above dial 1). Sizes are taken from the AEscapeFrame actors in the level.
+	 * (smallest frame above dial 1) and filled with that painting's background colour.
+	 * Sizes and colours are taken from the AEscapeFrame actors in the level.
 	 */
 	UPROPERTY(VisibleAnywhere, Category = "Escape")
 	TArray<TObjectPtr<UStaticMeshComponent>> SilhouetteOutlines;

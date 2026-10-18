@@ -13,6 +13,7 @@
 #include "EscapeRoom/EscapePaint.h"
 #include "EscapeRoom/EscapeSafe.h"
 #include "EscapeRoom/EscapeVisuals.h"
+#include "Misc/Paths.h"
 #include "SessionAnalyticsSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "EscapeRoom"
@@ -109,12 +110,12 @@ void AEscapeRoomManager::Tick(float DeltaSeconds)
 
 	if (CurrentPuzzle >= 1 && CurrentPuzzle <= 3)
 	{
-		IdleSeconds += DeltaSeconds;
-		if (HintLevel < 1 && IdleSeconds >= HintDelay1)
+		SecondsSinceStep += DeltaSeconds;
+		if (HintLevel < 1 && SecondsSinceStep >= HintDelay1)
 		{
 			ShowHint(1);
 		}
-		else if (HintLevel == 1 && IdleSeconds >= HintDelay2)
+		else if (HintLevel == 1 && SecondsSinceStep >= HintDelay2)
 		{
 			ShowHint(2);
 		}
@@ -143,7 +144,7 @@ void AEscapeRoomManager::StartPuzzle(int32 Puzzle)
 	CurrentPuzzle = Puzzle;
 	Attempts = 0;
 	HintLevel = 0;
-	IdleSeconds = 0.f;
+	SecondsSinceStep = 0.f;
 	ClearGlow();
 	ApplyLights();
 	Record(TEXT("puzzle_started"), { { TEXT("puzzle"), Itoa(Puzzle) } });
@@ -189,26 +190,12 @@ void AEscapeRoomManager::SolveCurrentPuzzle()
 void AEscapeRoomManager::WrongAttempt(const FString& Input)
 {
 	++Attempts;
-	IdleSeconds = 0.f;
 	Record(TEXT("wrong_attempt"), { { TEXT("puzzle"), Itoa(CurrentPuzzle) }, { TEXT("input"), Input } });
 }
 
-void AEscapeRoomManager::NotifyInspected(const AEscapeInteractable* Source, const FString& Id, int32 PuzzleOverride)
+void AEscapeRoomManager::NotifyInspected(const AEscapeInteractable* Source, const FString& Id)
 {
 	Record(TEXT("object_inspected"), { { TEXT("object"), Id } });
-	const bool bRelevant = PuzzleOverride > 0 ? PuzzleOverride == CurrentPuzzle : (Source && Source->BelongsToPuzzle(CurrentPuzzle));
-	if (bRelevant)
-	{
-		IdleSeconds = 0.f;
-	}
-}
-
-void AEscapeRoomManager::NotifyProgress(int32 Puzzle)
-{
-	if (Puzzle == CurrentPuzzle)
-	{
-		IdleSeconds = 0.f;
-	}
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -256,7 +243,7 @@ void AEscapeRoomManager::HandleFrame(AEscapeFrame* Frame)
 
 void AEscapeRoomManager::HandleDrawer(AEscapeDesk* Desk)
 {
-	NotifyInspected(Desk, TEXT("drawer"), 2);
+	NotifyInspected(Desk, TEXT("drawer"));
 	if (Desk->IsDrawerOpen())
 	{
 		ShowMessage(LOCTEXT("DrawerEmpty", "서랍은 이제 비어 있다."));
@@ -269,6 +256,8 @@ void AEscapeRoomManager::HandleDrawer(AEscapeDesk* Desk)
 	}
 	Desk->OpenDrawer();
 	bHasPalette = true;
+	// Opening the drawer is a real step inside puzzle 2: restart its hint timer.
+	SecondsSinceStep = 0.f;
 	ShowMessage(LOCTEXT("GotPalette", "서랍 안에 팔레트가 있다. 물감 두 가지를 섞어 보자."));
 }
 
@@ -283,6 +272,13 @@ void AEscapeRoomManager::HandlePaint(AEscapePaint* Paint)
 	if (CurrentPuzzle != 2)
 	{
 		ShowMessage(LOCTEXT("ColorDone", "필요한 색은 이미 만들었다."));
+		return;
+	}
+
+	// A second press on the same can is almost always E being mashed, not an answer.
+	if (PaletteSlots.Num() == 1 && PaletteSlots[0].Get() == Paint)
+	{
+		ShowMessage(FText::Format(LOCTEXT("PaintSame", "{0} 물감은 이미 팔레트에 있다. 다른 물감을 고르자."), Paint->ColorName));
 		return;
 	}
 
@@ -353,6 +349,13 @@ void AEscapeRoomManager::HandleSafeHandle(AEscapeSafe* Safe, const FString& Code
 		return;
 	}
 
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (Now - LastHandleTime < HandleCooldownSeconds)
+	{
+		return;
+	}
+	LastHandleTime = Now;
+
 	if (Code == SafeCode)
 	{
 		Safe->OpenDoor();
@@ -391,11 +394,14 @@ void AEscapeRoomManager::HandleDoor(AEscapeDoor* Door)
 
 	const float TotalSeconds = GetElapsedSeconds();
 	Record(TEXT("escaped"), { { TEXT("total_sec"), FString::Printf(TEXT("%.1f"), TotalSeconds) }, { TEXT("hints_used"), Itoa(HintsUsed) } });
+	FString CsvPath;
 	if (const UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (USessionAnalyticsSubsystem* Analytics = GameInstance->GetSubsystem<USessionAnalyticsSubsystem>())
 		{
-			UE_LOG(LogEscapeRoom, Display, TEXT("Escaped in %.1f s, %d hints -> %s"), TotalSeconds, HintsUsed, *Analytics->GetOutputFilePath());
+			CsvPath = FPaths::ConvertRelativePathToFull(Analytics->GetOutputFilePath());
+			FPaths::MakePlatformFilename(CsvPath);
+			UE_LOG(LogEscapeRoom, Display, TEXT("Escaped in %.1f s, %d hints -> %s"), TotalSeconds, HintsUsed, *CsvPath);
 			Analytics->EndSession(TEXT("Escaped"));
 		}
 	}
@@ -403,7 +409,9 @@ void AEscapeRoomManager::HandleDoor(AEscapeDoor* Door)
 	FNumberFormattingOptions OneDecimal;
 	OneDecimal.SetMaximumFractionalDigits(1);
 	// Set directly: ShowMessage ignores messages once escaped, so this one stays on screen.
-	Message = FText::Format(LOCTEXT("Escaped", "탈출 성공! {0}초 · 힌트 {1}회"), FText::AsNumber(TotalSeconds, &OneDecimal), HintsUsed);
+	// The full CSV path is shown so playtesters can find the file to send.
+	Message = FText::Format(LOCTEXT("Escaped", "탈출 성공! {0}초 · 힌트 {1}회\n결과 파일: {2}\nEsc를 누르면 종료돼요."),
+		FText::AsNumber(TotalSeconds, &OneDecimal), HintsUsed, FText::FromString(CsvPath));
 	MessageUntil = GetWorld()->GetTimeSeconds() + 3600.0;
 }
 
@@ -427,10 +435,11 @@ void AEscapeRoomManager::ShowHint(int32 Level)
 	Record(TEXT("hint_shown"), { { TEXT("puzzle"), Itoa(CurrentPuzzle) }, { TEXT("level"), Itoa(Level) } });
 
 	AddGlowTargets(Level == 1 ? Config->Hint1Tag : Config->Hint2Tag, Level == 2 && Config->bHint2Sequential);
-	const FText& HintMessage = Level == 1 ? Config->Hint1Message : Config->Hint2Message;
-	if (!HintMessage.IsEmpty())
+	const FText& Line = Level == 1 ? Config->Hint1Message : Config->Hint2Message;
+	if (!Line.IsEmpty())
 	{
-		ShowMessage(HintMessage);
+		HintMessage = Line;
+		HintMessageUntil = GetWorld()->GetTimeSeconds() + HintMessageSeconds;
 	}
 }
 
@@ -549,6 +558,11 @@ void AEscapeRoomManager::ShowMessage(const FText& InMessage)
 	}
 	Message = InMessage;
 	MessageUntil = GetWorld()->GetTimeSeconds() + MessageSeconds;
+}
+
+bool AEscapeRoomManager::IsHintMessageVisible() const
+{
+	return !bEscaped && GetWorld() && GetWorld()->GetTimeSeconds() < HintMessageUntil;
 }
 
 bool AEscapeRoomManager::IsMessageVisible() const

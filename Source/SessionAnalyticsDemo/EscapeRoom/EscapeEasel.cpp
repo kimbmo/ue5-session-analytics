@@ -63,6 +63,13 @@ AEscapeEasel::AEscapeEasel()
 	EmptyPatch->SetRelativeScale3D(FVector(0.005f, 0.22f, 0.16f));
 	EmptyPatch->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
+	// Slightly larger and just behind the patch, so only a ~1.5 cm green rim shows.
+	EmptyPatchBorder = EscapeVisuals::CreatePart(this, TEXT("EmptyPatchBorder"), EscapeVisuals::Cube);
+	EmptyPatchBorder->SetupAttachment(SceneRoot);
+	EmptyPatchBorder->SetRelativeLocation(FVector(5.4f, -12.f, 140.f));
+	EmptyPatchBorder->SetRelativeScale3D(FVector(0.005f, 0.25f, 0.19f));
+	EmptyPatchBorder->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
 	ObjectId = TEXT("easel");
 	PuzzleIds = { 2 };
 	BaseColor = CanvasColor;
@@ -93,6 +100,7 @@ void AEscapeEasel::ApplyColors()
 		EscapeVisuals::SetColor(PaintedParts[Index], PaintedBlocks[Index].Color);
 	}
 	EscapeVisuals::SetColor(EmptyPatch, bFilled ? FillColor : PatchColor);
+	EscapeVisuals::SetColor(EmptyPatchBorder, PatchBorderColor, 0.6f);
 }
 
 void AEscapeEasel::FillPatch(const FLinearColor& Color)

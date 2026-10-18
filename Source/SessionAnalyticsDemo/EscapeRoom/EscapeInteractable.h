@@ -26,7 +26,7 @@ public:
 	/** Text shown next to the crosshair while this object is in reach. */
 	virtual FText GetPrompt(const UPrimitiveComponent* HitComponent) const { return DisplayName; }
 
-	/** True if this object belongs to the given puzzle (1-3). Touching it then counts as progress. */
+	/** True if this object belongs to the given puzzle (1-3). */
 	bool BelongsToPuzzle(int32 Puzzle) const { return PuzzleIds.Contains(Puzzle); }
 
 	/** Id written to the analytics log (object_inspected{object}). */
