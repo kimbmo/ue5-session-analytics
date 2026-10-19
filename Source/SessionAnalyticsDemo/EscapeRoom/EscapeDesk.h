@@ -19,6 +19,10 @@ public:
 	void OpenDrawer();
 	bool IsDrawerOpen() const { return bDrawerOpen; }
 	bool IsDrawerPart(const UPrimitiveComponent* Component) const;
+	bool IsPalettePart(const UPrimitiveComponent* Component) const;
+	/** v5: the palette is picked up with E and disappears from the drawer. */
+	void TakePalette();
+	bool IsPaletteInDrawer() const { return bPaletteInDrawer; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Escape|Desk")
 	FText DrawerName;
@@ -35,8 +39,19 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Escape")
 	TObjectPtr<UStaticMeshComponent> DrawerHandle;
 
+	/** Moves with the drawer; holds the palette board, thumb hole and paint blobs. */
+	UPROPERTY(VisibleAnywhere, Category = "Escape")
+	TObjectPtr<USceneComponent> PaletteRoot;
+
+	/** The oval palette board. */
 	UPROPERTY(VisibleAnywhere, Category = "Escape")
 	TObjectPtr<UStaticMeshComponent> Palette;
+
+	UPROPERTY(VisibleAnywhere, Category = "Escape")
+	TObjectPtr<UStaticMeshComponent> PaletteThumbHole;
+
+	UPROPERTY(VisibleAnywhere, Category = "Escape")
+	TArray<TObjectPtr<UStaticMeshComponent>> PaletteBlobs;
 
 	UPROPERTY(VisibleAnywhere, Category = "Escape")
 	TArray<TObjectPtr<UStaticMeshComponent>> Legs;
@@ -48,7 +63,9 @@ protected:
 
 private:
 	void ApplyColors();
+	TArray<UStaticMeshComponent*> GetPaletteParts() const;
 
 	bool bDrawerOpen = false;
+	bool bPaletteInDrawer = true;
 	float DrawerAlpha = 0.f;
 };

@@ -4,10 +4,11 @@
 #include "GameFramework/Character.h"
 #include "EscapeCharacter.generated.h"
 
+class AEscapeRoomManager;
 class UCameraComponent;
 
 /**
- * First-person player: WASD + mouse look, E fires a line trace from the camera.
+ * First-person player: WASD + mouse look, E fires a line trace from the camera, H asks for a hint, Esc opens the menu.
  * Input is read directly from the player controller each tick, so the prototype needs no input assets.
  */
 UCLASS()
@@ -61,7 +62,10 @@ private:
 	void UpdateFocus();
 
 	void SetFocus(UPrimitiveComponent* Component);
+	AEscapeRoomManager* GetManager() const;
+	bool IsMenuOpen() const;
 
+	mutable TWeakObjectPtr<AEscapeRoomManager> CachedManager;
 	FText FocusPrompt;
 	TWeakObjectPtr<UPrimitiveComponent> FocusComponent;
 	double LastInteractTime = -1000.0;

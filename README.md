@@ -29,23 +29,30 @@ and analytics code tangled with gameplay Blueprints.
 
 ## Escape room prototype
 A 3-minute first-person escape room in a painter's studio, built to show the plugin in a real game loop.
-Three puzzles run in sequence (find, combine, order); if the player makes no progress, two staged hints light up the
-relevant objects. Every play session is logged to CSV by this plugin: puzzle start/solve with attempt counts,
-wrong answers, hints shown, objects inspected and the escape time.
+Three puzzles run in sequence (find, combine, order). Hints come on request (H, two levels per puzzle) with a timed
+safety net, and light up the relevant objects. Items (drawer key, palette, door key) are picked up with E. Every play
+session is logged to CSV by this plugin: build info, puzzle start/solve with attempt counts, wrong answers, hints
+(requested or automatic), items found and picked up, objects inspected, pause-menu use and the escape time.
+
+Current version: **v5** (iterated from playtests, see below). Screenshots of v5: `Docs/EscapeRoom/v5/`.
 
 | | | |
 |---|---|---|
 | ![Room overview](Docs/EscapeRoom/room_overview.png) | ![Hint: date labels glow](Docs/EscapeRoom/hint_date_labels.png) | ![Safe with frame-silhouette order clue](Docs/EscapeRoom/safe_silhouette_clue.png) |
 | The studio | A hint lighting up the date labels | Safe dials with a text-free order clue |
 
-- **Play:** open the project in **UE 5.8** (the escape-room assets are saved in 5.8), open `Content/EscapeRoom/L_Studio`, press Play and click the viewport. WASD to move, mouse to look, E to interact.
+- **Play:** open the project in **UE 5.8** (the escape-room assets are saved in 5.8), open `Content/EscapeRoom/L_Studio`, press Play and click the viewport. WASD to move, mouse to look, E to interact, H for a hint, Esc for the pause menu.
 - **Code:** all gameplay logic is C++ in `Source/SessionAnalyticsDemo/EscapeRoom` (room manager, interactables, character, HUD).
   The Blueprints in `Content/EscapeRoom/Blueprints` are thin subclasses, so every tuning value (hint delays, safe code, hint and light tags) is editable in the Details panel.
-- **Autoplay (development builds only):** the console command `Escape.Autoplay [hintDelaySeconds] [quit]` plays the room start to finish through the real E trace,
-  takes screenshots into `Saved/Screenshots/EscapeRoom/` and leaves a full CSV. `Scripts/create_escape_room.py` rebuilds the level headless.
+- **Autoplay (development builds only):** the console command `Escape.Autoplay [hintDelaySeconds] [quit] [topview]` plays the room start to finish through the real E trace
+  (including hint requests, the pause menu and quitting through it), takes screenshots into `Saved/Screenshots/EscapeRoom/` and leaves a full CSV.
+  `topview` only takes a plan view. `Scripts/create_escape_room.py` rebuilds the level headless.
 - **Guide (Korean):** `Content/EscapeRoom/README_EscapeRoom.md` explains the class roles, tuning values, events and how to play.
-- **Playtests:** `Docs/Playtest/` holds the raw CSVs (v1: 3 plays, v2: 1 play), the v1 analysis (`analysis_v1.md`) and the v2 change list (`changes_v2.md`) that came out of it.
-  Rerun the summary with `python Scripts/analyze_playtest.py Docs/Playtest/data/v1` (or `data/v2`).
+- **Playtests:** `Docs/Playtest/` holds the raw CSVs (v1: 3 plays, v2: 1, v4: 1, v5: 1), the v1 analysis (`analysis_v1.md`) and the change list of each
+  version (`changes_v2.md`, `changes_v4_workpc.md`, `changes_v5.md`). Each change ties a playtest finding to a change, e.g. v4: a player held the
+  drawer key for 82 s without noticing it → v5: keys are picked up with E and announced on screen → 2.1 s in the next play.
+  Rerun the summary with `python Scripts/analyze_playtest.py Docs/Playtest/data/v1` (or another version folder).
+  v3 and the first v4 were built on another machine and never pushed; v4 was rebuilt to the same spec (`changes_v4_workpc.md`).
 
 ## Install
 1. Copy `Plugins/SessionAnalytics` from this repo to `<YourProject>/Plugins/SessionAnalytics`.

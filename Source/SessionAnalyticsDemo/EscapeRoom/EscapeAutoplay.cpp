@@ -14,10 +14,13 @@
 #include "EscapeRoom/EscapeCharacter.h"
 #include "EscapeRoom/EscapeDesk.h"
 #include "EscapeRoom/EscapeDoor.h"
+#include "EscapeRoom/EscapeEasel.h"
 #include "EscapeRoom/EscapeFrame.h"
 #include "EscapeRoom/EscapePaint.h"
 #include "EscapeRoom/EscapeRoomManager.h"
 #include "EscapeRoom/EscapeSafe.h"
+#include "Engine/StaticMeshActor.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/CoreDelegates.h"
@@ -34,15 +37,20 @@ namespace
 	class FEscapeAutoplay
 	{
 	public:
-		FEscapeAutoplay(UWorld* InWorld, float HintDelay, bool bInQuit, bool bCeilingOnly)
+		FEscapeAutoplay(UWorld* InWorld, float HintDelay, bool bInQuit, bool bCeilingOnly, bool bTopView)
 			: World(InWorld), bQuit(bInQuit)
 		{
 			if (AEscapeRoomManager* Manager = GetManager())
 			{
 				Manager->HintDelay1 = HintDelay;
 				Manager->HintDelay2 = HintDelay * 2.f;
+				Manager->DrawerNudgeDelay = HintDelay;
 			}
-			if (bCeilingOnly)
+			if (bTopView)
+			{
+				BuildTopViewScript();
+			}
+			else if (bCeilingOnly)
 			{
 				BuildCeilingScript();
 			}
@@ -182,11 +190,38 @@ namespace
 			}
 		}
 
-		void Shot(const FString& Name) const
+		void Shot(const FString& Name, bool bShowUI = true) const
 		{
 			const FString Path = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("Screenshots/EscapeRoom") / (Name + TEXT(".png")));
-			FScreenshotRequest::RequestScreenshot(Path, true, false);
+			FScreenshotRequest::RequestScreenshot(Path, bShowUI, false);
 			UE_LOG(LogEscapeAutoplay, Display, TEXT("Autoplay: screenshot %s"), *Path);
+		}
+
+		/** Plan view for docs: hides the ceiling and shoots straight down from above the room. */
+		void BuildTopViewScript()
+		{
+			Add(TEXT("top view"), 1.5f, [this]
+			{
+				for (TActorIterator<AActor> It(World.Get()); It; ++It)
+				{
+					// The ceiling is the only block above the 300 cm walls.
+					if (It->IsA<AStaticMeshActor>() && It->GetActorLocation().Z > 300.f)
+					{
+						It->SetActorHiddenInGame(true);
+						It->SetActorEnableCollision(false);
+					}
+				}
+				if (AEscapeCharacter* Player = GetPlayer())
+				{
+					Player->GetCharacterMovement()->SetMovementMode(MOVE_Flying);
+					Player->GetCharacterMovement()->StopMovementImmediately();
+					// Narrow FOV from high up keeps the walls nearly vertical in the picture.
+					Player->Camera->SetFieldOfView(45.f);
+					Player->SetActorLocation(FVector(0.f, 0.f, 1500.f), false, nullptr, ETeleportType::TeleportPhysics);
+					Player->GetController()->SetControlRotation(FRotator(-89.9f, 90.f, 0.f));
+				}
+			});
+			Add(TEXT("shot top"), 1.0f, [this] { Shot(TEXT("plan_top"), false); });
 		}
 
 		/** From PlayerStart at eye height, looks up ~60 degrees in four directions (checks what is visible on the ceiling). */
@@ -220,6 +255,8 @@ namespace
 
 			Add(TEXT("overview"), 1.5f, [this] { StandAndLook(FVector(-270.f, -40.f, 0.f), FVector(100.f, 200.f, 120.f)); });
 			Add(TEXT("shot overview"), 0.6f, [this] { Shot(TEXT("00_overview_frames")); });
+			// Same camera at the start of every stage: lux_*.png are compared for the brightness change between puzzles.
+			LuxShot(TEXT("lux_1_p1"));
 			Add(TEXT("overview 2"), 0.4f, [this] { StandAndLook(FVector(240.f, 60.f, 0.f), FVector(-180.f, -100.f, 90.f)); });
 			Add(TEXT("shot overview 2"), 0.6f, [this] { Shot(TEXT("00_overview_desk_easel_safe")); });
 			Add(TEXT("spawn view"), 0.4f, [this] { StandAndLook(FVector(-220.f, 0.f, 0.f), FVector(300.f, 0.f, 150.f)); });
@@ -240,20 +277,51 @@ namespace
 					}
 				}
 			});
+			// Hint 1 on request (H), hint 2 from the safety-net timer.
+			Add(TEXT("press H (P1 hint 1)"), 0.4f, [this] { if (AEscapeRoomManager* Manager = GetManager()) Manager->RequestHint(); });
 			WaitHint(TEXT("wait P1 hint 1"), 1);
 			Add(TEXT("shot P1 hint 1"), 0.2f, [this] { if (AEscapeInteractable* Memo = Find<AEscapeInteractable>(TEXT("memo"))) LookAt(Memo->Mesh, true); });
 			Add(TEXT("shot"), 0.4f, [this] { Shot(TEXT("03_hint_p1_memo")); });
+			// Esc menu: pauses the game, slider change is logged once, close logs paused_sec.
+			Add(TEXT("open menu"), 0.3f, [this] { if (AEscapeRoomManager* Manager = GetManager()) Manager->OpenMenu(); });
+			Add(TEXT("slider 0.70"), 0.5f, [this] { if (AEscapeRoomManager* Manager = GetManager()) { Manager->SetMouseSensitivity(0.7f); Manager->CommitMouseSensitivity(); } });
+			Add(TEXT("shot menu"), 0.4f, [this] { Shot(TEXT("03b_menu")); });
+			Add(TEXT("close menu"), 1.0f, [this] { if (AEscapeRoomManager* Manager = GetManager()) Manager->CloseMenu(); });
 			WaitHint(TEXT("wait P1 hint 2"), 2);
 			Add(TEXT("look at frames"), 0.2f, [this, FrameWall] { StandAndLook(FrameWall - FVector(0.f, 200.f, 0.f), FrameWall - FVector(0.f, 0.f, 15.f)); });
 			Add(TEXT("shot"), 0.5f, [this] { Shot(TEXT("04_hint_p1_labels")); });
 			Add(TEXT("lift latest frame"), 0.3f, [this] { Press(GetManager()->GetLatestFrame()->Canvas); });
-			Add(TEXT("shot key"), 0.5f, [this] { Shot(TEXT("05_key_found")); });
+			Add(TEXT("shot key"), 0.6f, [this] { Shot(TEXT("05_key_found")); });
+			// v5: the key has to be taken with E.
+			Add(TEXT("take key"), 0.6f, [this] { Press(GetManager()->GetLatestFrame()->Key); },
+				[this] { const AEscapeRoomManager* M = GetManager(); return M && M->HasDrawerKeyItem(); });
+			Add(TEXT("shot key toast"), 0.3f, [this] { Shot(TEXT("05b_key_toast")); });
+			Add(TEXT("check hint line cleared"), 0.f, [this]
+			{
+				const AEscapeRoomManager* Manager = GetManager();
+				UE_LOG(LogEscapeAutoplay, Display, TEXT("Autoplay: hint line after puzzle change visible=%d"), Manager && Manager->IsHintMessageVisible());
+			});
+			LuxShot(TEXT("lux_2_p2"));
+			// Clean easel shots for docs (no UI): unfinished now, filled after puzzle 2.
+			Add(TEXT("easel close-up"), 0.1f, [this] { if (AEscapeEasel* Easel = Find<AEscapeEasel>()) LookAt(Easel->Mesh); });
+			Add(TEXT("shot easel clean"), 0.5f, [this] { Shot(TEXT("06e_easel_clean"), false); });
+			Add(TEXT("wait drawer nudge"), 0.f, [] {}, [this] { const AEscapeRoomManager* M = GetManager(); return M && M->IsDrawerNudgeActive(); });
+			Add(TEXT("look at drawer"), 0.1f, [this] { if (AEscapeDesk* Desk = Find<AEscapeDesk>()) LookAt(Desk->Drawer); });
+			Add(TEXT("shot drawer nudge"), 0.9f, [this] { Shot(TEXT("05c_drawer_nudge")); });
 
-			// Puzzle 2: drawer, a wrong pair, both hints, the right pair.
-			Add(TEXT("open drawer"), 1.6f, [this] { if (AEscapeDesk* Desk = Find<AEscapeDesk>()) Press(Desk->Drawer); });
+			// Puzzle 2: drawer, two wrong pairs, both hints, the right pair.
+			Add(TEXT("open drawer"), 1.0f, [this] { if (AEscapeDesk* Desk = Find<AEscapeDesk>()) Press(Desk->Drawer); });
 			Add(TEXT("shot drawer"), 0.8f, [this] { Shot(TEXT("06_drawer_palette")); });
+			Add(TEXT("palette close-up"), 0.1f, [this] { if (AEscapeDesk* Desk = Find<AEscapeDesk>()) { LookAt(Desk->Palette, true); } });
+			Add(TEXT("shot palette"), 0.4f, [this] { Shot(TEXT("06b_palette_closeup")); });
+			Add(TEXT("take palette"), 0.3f, [this] { if (AEscapeDesk* Desk = Find<AEscapeDesk>()) Press(Desk->Palette, 1, true); },
+				[this] { const AEscapeRoomManager* M = GetManager(); return M && M->HasPaletteItem(); });
+			Add(TEXT("shot palette taken"), 0.3f, [this] { Shot(TEXT("06d_palette_taken")); });
 			Add(TEXT("pick red"), 0.4f, [this] { if (AEscapePaint* Paint = Find<AEscapePaint>(TEXT("paint_red"))) Press(Paint->Mesh); });
+			Add(TEXT("shot one paint held"), 0.3f, [this] { Shot(TEXT("06c_paint_slot")); });
 			Add(TEXT("pick blue (wrong pair)"), 0.4f, [this] { if (AEscapePaint* Paint = Find<AEscapePaint>(TEXT("paint_blue"))) Press(Paint->Mesh); });
+			Add(TEXT("pick white"), 0.4f, [this] { if (AEscapePaint* Paint = Find<AEscapePaint>(TEXT("paint_white"))) Press(Paint->Mesh); });
+			Add(TEXT("pick black (wrong pair)"), 0.4f, [this] { if (AEscapePaint* Paint = Find<AEscapePaint>(TEXT("paint_black"))) Press(Paint->Mesh); });
 			WaitHint(TEXT("wait P2 hint 2"), 2);
 			Add(TEXT("look at lamp"), 0.2f, [this] { StandAndLook(FVector(60.f, 0.f, 0.f), FVector(300.f, 0.f, 230.f)); });
 			Add(TEXT("shot"), 0.4f, [this] { Shot(TEXT("07_hint_p2_lamp")); });
@@ -261,15 +329,23 @@ namespace
 			Add(TEXT("shot"), 0.4f, [this] { Shot(TEXT("08_hint_p2_paints")); });
 			Add(TEXT("pick blue"), 0.3f, [this] { if (AEscapePaint* Paint = Find<AEscapePaint>(TEXT("paint_blue"))) Press(Paint->Mesh); });
 			Add(TEXT("pick yellow"), 0.4f, [this] { if (AEscapePaint* Paint = Find<AEscapePaint>(TEXT("paint_yellow"))) Press(Paint->Mesh); });
+			Add(TEXT("easel filled close-up"), 0.3f, [this] { if (AEscapeEasel* Easel = Find<AEscapeEasel>()) LookAt(Easel->Mesh); });
+			Add(TEXT("shot easel filled"), 0.5f, [this] { Shot(TEXT("08b_easel_filled_clean"), false); });
+			LuxShot(TEXT("lux_3_p3"));
 			Add(TEXT("look at safe"), 0.8f, [this] { StandAndLook(FVector(-60.f, 40.f, 0.f), FVector(-200.f, 220.f, 50.f)); });
 			Add(TEXT("shot safe"), 0.5f, [this] { Shot(TEXT("09_safe_revealed")); });
 			Add(TEXT("face safe at eye height"), 0.2f, [this] { StandAndLook(FVector(-200.f, 70.f, 0.f), FVector(-200.f, 186.f, 52.f)); });
 			Add(TEXT("shot safe front"), 0.5f, [this] { Shot(TEXT("09b_safe_front_clue")); });
+			// Clean close-up of the dial clue for docs (no UI).
+			Add(TEXT("safe clue close-up"), 0.2f, [this] { StandAndLook(FVector(-200.f, 120.f, 0.f), FVector(-200.f, 186.f, 92.f)); });
+			Add(TEXT("shot safe clue clean"), 0.5f, [this] { Shot(TEXT("09d_safe_clue_clean"), false); });
 			Add(TEXT("frames from room center"), 0.2f, [this, FrameWall] { StandAndLook(FVector(60.f, 30.f, 0.f), FrameWall); });
 			Add(TEXT("shot frames"), 0.5f, [this] { Shot(TEXT("09c_frames_from_center")); });
 
-			// Puzzle 3: a wrong code, both hints, then the code from the frames.
+			// Puzzle 3: a wrong code, both hints on request, then the code from the frames.
 			Add(TEXT("pull handle (0000)"), 0.4f, [this] { if (AEscapeSafe* Safe = Find<AEscapeSafe>()) Press(Safe->Handle); });
+			Add(TEXT("press H (P3 hint 1)"), 0.4f, [this] { if (AEscapeRoomManager* Manager = GetManager()) Manager->RequestHint(); });
+			Add(TEXT("press H (P3 hint 2)"), 0.6f, [this] { if (AEscapeRoomManager* Manager = GetManager()) Manager->RequestHint(); });
 			WaitHint(TEXT("wait P3 hint 2"), 2);
 			Add(TEXT("look at frames"), 0.2f, [this, FrameWall] { StandAndLook(FrameWall - FVector(0.f, 230.f, 0.f), FrameWall); });
 			Add(TEXT("shot"), 0.3f, [this] { Shot(TEXT("10_hint_p3_sequence")); });
@@ -285,6 +361,10 @@ namespace
 			});
 			Add(TEXT("pull handle"), 0.4f, [this] { if (AEscapeSafe* Safe = Find<AEscapeSafe>()) Press(Safe->Handle); });
 			Add(TEXT("shot safe open"), 1.0f, [this] { Shot(TEXT("11_safe_open")); });
+			Add(TEXT("take door key"), 0.3f, [this] { if (AEscapeSafe* Safe = Find<AEscapeSafe>()) Press(Safe->DoorKey); },
+				[this] { const AEscapeRoomManager* M = GetManager(); return M && M->HasDoorKeyItem(); });
+			Add(TEXT("shot door key toast"), 0.3f, [this] { Shot(TEXT("11b_door_key_toast")); });
+			LuxShot(TEXT("lux_4_door"));
 
 			// Escape.
 			Add(TEXT("open door"), 0.6f, [this] { if (AEscapeDoor* Door = Find<AEscapeDoor>()) Press(Door->Mesh); });
@@ -295,6 +375,19 @@ namespace
 				const AEscapeRoomManager* Manager = GetManager();
 				UE_LOG(LogEscapeAutoplay, Display, TEXT("Autoplay finished: escaped=%d"), Manager && Manager->HasEscaped());
 			});
+			if (bQuit)
+			{
+				// Quit the way a player does: Esc menu > 게임 종료 > 예.
+				Add(TEXT("menu for quit"), 0.3f, [this] { if (AEscapeRoomManager* Manager = GetManager()) { Manager->OpenMenu(); Manager->RequestQuit(); } });
+				Add(TEXT("shot quit confirm"), 0.4f, [this] { Shot(TEXT("13_quit_confirm")); });
+				Add(TEXT("confirm quit"), 1.0f, [this] { if (AEscapeRoomManager* Manager = GetManager()) Manager->ConfirmQuit(); });
+			}
+		}
+
+		void LuxShot(const FString& Name)
+		{
+			Add(TEXT("lux view"), 0.3f, [this] { StandAndLook(FVector(-270.f, -40.f, 0.f), FVector(100.f, 200.f, 120.f)); });
+			Add(TEXT("lux shot"), 0.5f, [this, Name] { Shot(Name, false); });
 		}
 
 		TWeakObjectPtr<UWorld> World;
@@ -332,12 +425,12 @@ namespace
 		}
 		const float HintDelay = Args.Num() > 0 ? FMath::Max(0.5f, FCString::Atof(*Args[0])) : 2.f;
 		auto HasArg = [&Args](const TCHAR* Name) { return Args.ContainsByPredicate([Name](const FString& Arg) { return Arg.Equals(Name, ESearchCase::IgnoreCase); }); };
-		GAutoplay = MakeUnique<FEscapeAutoplay>(World, HintDelay, HasArg(TEXT("quit")), HasArg(TEXT("ceiling")));
+		GAutoplay = MakeUnique<FEscapeAutoplay>(World, HintDelay, HasArg(TEXT("quit")), HasArg(TEXT("ceiling")), HasArg(TEXT("topview")));
 	}
 
 	FAutoConsoleCommandWithWorldAndArgs GEscapeAutoplayCommand(
 		TEXT("Escape.Autoplay"),
-		TEXT("Plays the escape room start to finish. Args: [HintDelaySeconds=2] [quit] [ceiling = only take look-up screenshots]"),
+		TEXT("Plays the escape room start to finish. Args: [HintDelaySeconds=2] [quit] [ceiling = only take look-up screenshots] [topview = only take a plan view]"),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&StartAutoplay));
 }
 

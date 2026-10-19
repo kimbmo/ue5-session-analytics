@@ -3,7 +3,9 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/MeshComponent.h"
+#include "EngineUtils.h"
 #include "EscapeRoom/EscapeInteractable.h"
+#include "EscapeRoom/EscapeRoomManager.h"
 #include "EscapeRoom/EscapeVisuals.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
@@ -15,6 +17,8 @@
 AEscapeCharacter::AEscapeCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	// Keeps reading the menu keys while the Esc menu pauses the game.
+	PrimaryActorTick.bTickEvenWhenPaused = true;
 
 	GetCapsuleComponent()->InitCapsuleSize(34.f, 90.f);
 	bUseControllerRotationYaw = true;
@@ -43,7 +47,29 @@ void AEscapeCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	ReadInput();
-	UpdateFocus();
+	if (!IsMenuOpen())
+	{
+		UpdateFocus();
+	}
+}
+
+AEscapeRoomManager* AEscapeCharacter::GetManager() const
+{
+	if (!CachedManager.IsValid() && GetWorld())
+	{
+		for (TActorIterator<AEscapeRoomManager> It(GetWorld()); It; ++It)
+		{
+			CachedManager = *It;
+			break;
+		}
+	}
+	return CachedManager.Get();
+}
+
+bool AEscapeCharacter::IsMenuOpen() const
+{
+	const AEscapeRoomManager* Manager = GetManager();
+	return Manager && Manager->IsMenuOpen();
 }
 
 void AEscapeCharacter::ReadInput()
@@ -51,6 +77,28 @@ void AEscapeCharacter::ReadInput()
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	if (!PC)
 	{
+		return;
+	}
+
+	// Esc menu: Esc = continue, Q = quit (asks first), Y/N = answer the quit question. Nothing else while it is open.
+	if (AEscapeRoomManager* Manager = GetManager(); Manager && Manager->IsMenuOpen())
+	{
+		if (PC->WasInputKeyJustPressed(EKeys::Escape))
+		{
+			Manager->CloseMenu();
+		}
+		else if (PC->WasInputKeyJustPressed(EKeys::Q))
+		{
+			Manager->RequestQuit();
+		}
+		else if (Manager->IsQuitConfirmOpen() && PC->WasInputKeyJustPressed(EKeys::Y))
+		{
+			Manager->ConfirmQuit();
+		}
+		else if (PC->WasInputKeyJustPressed(EKeys::N))
+		{
+			Manager->CancelQuit();
+		}
 		return;
 	}
 
@@ -76,10 +124,25 @@ void AEscapeCharacter::ReadInput()
 		Interact();
 	}
 
-	// Playtest builds have no menu: Esc quits. The analytics session is closed on shutdown (reason recorded by the plugin).
+	if (PC->WasInputKeyJustPressed(EKeys::H))
+	{
+		if (AEscapeRoomManager* Manager = GetManager())
+		{
+			Manager->RequestHint();
+		}
+	}
+
+	// v4: Esc opens the pause menu instead of quitting right away; quitting is confirmed there.
 	if (PC->WasInputKeyJustPressed(EKeys::Escape))
 	{
-		UKismetSystemLibrary::QuitGame(this, PC, EQuitPreference::Quit, false);
+		if (AEscapeRoomManager* Manager = GetManager())
+		{
+			Manager->OpenMenu();
+		}
+		else
+		{
+			UKismetSystemLibrary::QuitGame(this, PC, EQuitPreference::Quit, false);
+		}
 	}
 }
 

@@ -21,9 +21,19 @@ public:
 	AEscapeFrame();
 
 	virtual void Interact(AEscapeCharacter* Player, UPrimitiveComponent* HitComponent) override;
+	virtual FText GetPrompt(const UPrimitiveComponent* HitComponent) const override;
 
-	/** Lifts the frame and drops it back after a moment. With bRevealKey the key behind it shows while lifted. */
+	/** Lifts the frame and drops it back after a moment (nothing behind it). */
 	void Lift(bool bRevealKey);
+
+	/**
+	 * v5: lifts the frame and keeps it up with the key showing (glowing softly) until the player picks the key up with E.
+	 * v4 tester: the key was taken automatically and the player never noticed, so they kept searching with it in hand.
+	 */
+	void RevealKey();
+	/** Hides the key and drops the frame back. */
+	void TakeKey();
+	bool IsKeyRevealed() const { return bKeyRevealed; }
 
 	float GetArea() const { return FrameSize.X * FrameSize.Y; }
 
@@ -75,8 +85,17 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Escape")
 	TObjectPtr<UTextRenderComponent> LabelText;
 
+	/** Key shaft. With KeyBow and KeyTooth it forms the drawer key hanging behind the frame. */
 	UPROPERTY(VisibleAnywhere, Category = "Escape")
 	TObjectPtr<UStaticMeshComponent> Key;
+
+	UPROPERTY(VisibleAnywhere, Category = "Escape")
+	TObjectPtr<UStaticMeshComponent> KeyBow;
+
+	UPROPERTY(VisibleAnywhere, Category = "Escape")
+	TObjectPtr<UStaticMeshComponent> KeyTooth;
+
+	bool IsKeyPart(const UPrimitiveComponent* Component) const { return Component && (Component == Key || Component == KeyBow || Component == KeyTooth); }
 
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
@@ -85,8 +104,10 @@ protected:
 
 private:
 	void Layout();
+	void SetKeyShown(bool bShown);
 	float GetLiftHeight() const { return FrameSize.Y * 0.5f + 14.f; }
 
+	bool bKeyRevealed = false;
 	float LiftAlpha = 0.f;
 	float LiftTarget = 0.f;
 	/** World time at which the frame starts dropping back. */

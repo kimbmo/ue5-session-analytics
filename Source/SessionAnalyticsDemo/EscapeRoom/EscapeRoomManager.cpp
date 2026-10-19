@@ -6,6 +6,7 @@
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "EngineUtils.h"
+#include "EscapeRoom/EscapeCharacter.h"
 #include "EscapeRoom/EscapeDesk.h"
 #include "EscapeRoom/EscapeDoor.h"
 #include "EscapeRoom/EscapeEasel.h"
@@ -13,6 +14,10 @@
 #include "EscapeRoom/EscapePaint.h"
 #include "EscapeRoom/EscapeSafe.h"
 #include "EscapeRoom/EscapeVisuals.h"
+#include "GameFramework/PlayerController.h"
+#include "HAL/PlatformTime.h"
+#include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "Misc/Paths.h"
 #include "SessionAnalyticsSubsystem.h"
 
@@ -55,8 +60,8 @@ AEscapeRoomManager::AEscapeRoomManager()
 		LOCTEXT("P2H1", "문 위 램프와 같은 색을 만들 수 있을까?"),
 		LOCTEXT("P2H2", "두 가지 물감이 반짝인다.")));
 	Puzzles.Add(MakeConfig(TEXT("order"), 3, true,
-		LOCTEXT("P3H1", "그림 속에 그려진 것들을 세어 보자."),
-		LOCTEXT("P3H2", "작은 액자부터 차례로 빛난다.")));
+		LOCTEXT("P3H1", "다이얼 뒤 색과 같은 바탕의 그림을 찾아, 그 안에 그려진 것을 세어 보자."),
+		LOCTEXT("P3H2", "왼쪽 다이얼부터 차례로, 짝이 되는 그림이 하나씩 빛난다.")));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -76,6 +81,7 @@ void AEscapeRoomManager::BeginPlay()
 			}
 		}
 	}
+	Record(TEXT("build_info"), { { TEXT("version"), BuildVersion }, { TEXT("build"), BuildName } });
 
 	StartTime = GetWorld()->GetTimeSeconds();
 
@@ -108,18 +114,20 @@ void AEscapeRoomManager::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	// Safety net only: the manager does not tick while the Esc menu pauses the game, so menu time never counts.
 	if (CurrentPuzzle >= 1 && CurrentPuzzle <= 3)
 	{
 		SecondsSinceStep += DeltaSeconds;
 		if (HintLevel < 1 && SecondsSinceStep >= HintDelay1)
 		{
-			ShowHint(1);
+			ShowHint(1, false);
 		}
 		else if (HintLevel == 1 && SecondsSinceStep >= HintDelay2)
 		{
-			ShowHint(2);
+			ShowHint(2, false);
 		}
 	}
+	UpdateDrawerNudge();
 
 	if (GlowTargets.Num() == 0)
 	{
@@ -145,6 +153,8 @@ void AEscapeRoomManager::StartPuzzle(int32 Puzzle)
 	Attempts = 0;
 	HintLevel = 0;
 	SecondsSinceStep = 0.f;
+	// The previous puzzle's hint line must not stay on screen into the new puzzle.
+	ClearHintMessage();
 	ClearGlow();
 	ApplyLights();
 	Record(TEXT("puzzle_started"), { { TEXT("puzzle"), Itoa(Puzzle) } });
@@ -182,6 +192,7 @@ void AEscapeRoomManager::SolveCurrentPuzzle()
 	{
 		CurrentPuzzle = 4;
 		HintLevel = 0;
+		ClearHintMessage();
 		ClearGlow();
 		ApplyLights();
 	}
@@ -225,16 +236,103 @@ void AEscapeRoomManager::HandleFrame(AEscapeFrame* Frame)
 
 	if (Frame == GetLatestFrame())
 	{
-		Frame->Lift(true);
-		bHasDrawerKey = true;
-		ShowMessage(LOCTEXT("FoundDrawerKey", "액자 뒤에서 작은 열쇠를 찾았다! 서랍 열쇠 같다."));
-		SolveCurrentPuzzle();
+		// v5: the key stays on the wall until the player takes it with E (HandleFrameKey).
+		if (!Frame->IsKeyRevealed())
+		{
+			Frame->RevealKey();
+			Record(TEXT("item_found"), { { TEXT("item"), TEXT("drawer_key") } });
+		}
+		ShowMessage(LOCTEXT("FoundDrawerKey", "액자 뒤에 작은 열쇠가 걸려 있다! E로 집자."));
 	}
 	else
 	{
 		Frame->Lift(false);
 		ShowMessage(Frame->EmptyMessage);
 		WrongAttempt(Frame->ObjectId);
+	}
+}
+
+void AEscapeRoomManager::HandleFrameKey(AEscapeFrame* Frame)
+{
+	if (CurrentPuzzle != 1 || !Frame->IsKeyRevealed())
+	{
+		return;
+	}
+	Frame->TakeKey();
+	bHasDrawerKey = true;
+	KeyPickedAt = GetWorld()->GetTimeSeconds();
+	PickUpItem(TEXT("drawer_key"), LOCTEXT("ToastDrawerKey", "서랍 열쇠 획득!"));
+	ShowMessage(LOCTEXT("GotDrawerKey", "작은 열쇠다. 어딘가 잠긴 곳에 맞을 것 같다."));
+	SolveCurrentPuzzle();
+}
+
+void AEscapeRoomManager::PickUpItem(FName Item, const FText& Toast)
+{
+	Record(TEXT("item_picked"), { { TEXT("item"), Item.ToString() } });
+	ItemToast = Toast;
+	FlashItem = Item;
+	ItemToastUntil = GetWorld()->GetTimeSeconds() + ItemToastSeconds;
+}
+
+FText AEscapeRoomManager::GetItemToast() const
+{
+	return GetWorld() && GetWorld()->GetTimeSeconds() < ItemToastUntil ? ItemToast : FText::GetEmpty();
+}
+
+float AEscapeRoomManager::GetItemFlash(FName Item) const
+{
+	if (Item != FlashItem || !GetWorld())
+	{
+		return 0.f;
+	}
+	const double Left = ItemToastUntil - GetWorld()->GetTimeSeconds();
+	if (Left <= 0.0)
+	{
+		return 0.f;
+	}
+	// Three blinks that fade out.
+	const float Blink = 0.5f + 0.5f * FMath::Cos(static_cast<float>(Left) * 1.2f * UE_TWO_PI);
+	return Blink * FMath::Clamp(static_cast<float>(Left) / ItemToastSeconds + 0.3f, 0.f, 1.f);
+}
+
+void AEscapeRoomManager::UpdateDrawerNudge()
+{
+	const bool bWaiting = bHasDrawerKey && !bDrawerOpened && DrawerNudgeDelay > 0.f;
+	if (!bWaiting && !bDrawerNudgeShown)
+	{
+		return;
+	}
+	if (!NudgeDesk.IsValid())
+	{
+		for (TActorIterator<AEscapeDesk> It(GetWorld()); It; ++It)
+		{
+			NudgeDesk = *It;
+			break;
+		}
+	}
+	AEscapeDesk* Desk = NudgeDesk.Get();
+	if (!Desk)
+	{
+		return;
+	}
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (bWaiting && Now - KeyPickedAt >= DrawerNudgeDelay)
+	{
+		if (!bDrawerNudgeShown)
+		{
+			bDrawerNudgeShown = true;
+			Record(TEXT("nudge_shown"), { { TEXT("target"), TEXT("drawer") } });
+		}
+		const float Amount = DrawerNudgeStrength * (0.5f + 0.5f * FMath::Sin(Now * 0.8 * UE_TWO_PI));
+		EscapeVisuals::SetHintGlow(Desk->Drawer, Amount);
+		EscapeVisuals::SetHintGlow(Desk->DrawerHandle, Amount);
+	}
+	else if (!bWaiting && bDrawerNudgeShown)
+	{
+		// Drawer opened: switch the glow off once.
+		EscapeVisuals::SetHintGlow(Desk->Drawer, 0.f);
+		EscapeVisuals::SetHintGlow(Desk->DrawerHandle, 0.f);
+		bDrawerNudgeShown = false;
 	}
 }
 
@@ -246,7 +344,8 @@ void AEscapeRoomManager::HandleDrawer(AEscapeDesk* Desk)
 	NotifyInspected(Desk, TEXT("drawer"));
 	if (Desk->IsDrawerOpen())
 	{
-		ShowMessage(LOCTEXT("DrawerEmpty", "서랍은 이제 비어 있다."));
+		ShowMessage(Desk->IsPaletteInDrawer() ? LOCTEXT("DrawerPaletteLeft", "서랍 안에 팔레트가 있다. E로 집자.")
+			: LOCTEXT("DrawerEmpty", "서랍은 이제 비어 있다."));
 		return;
 	}
 	if (!bHasDrawerKey)
@@ -255,10 +354,24 @@ void AEscapeRoomManager::HandleDrawer(AEscapeDesk* Desk)
 		return;
 	}
 	Desk->OpenDrawer();
-	bHasPalette = true;
+	bDrawerOpened = true;
+	Record(TEXT("item_found"), { { TEXT("item"), TEXT("palette") } });
 	// Opening the drawer is a real step inside puzzle 2: restart its hint timer.
 	SecondsSinceStep = 0.f;
-	ShowMessage(LOCTEXT("GotPalette", "서랍 안에 팔레트가 있다. 물감 두 가지를 섞어 보자."));
+	ShowMessage(LOCTEXT("FoundPalette", "서랍 안에 팔레트가 있다! E로 집자."));
+}
+
+void AEscapeRoomManager::HandlePalette(AEscapeDesk* Desk)
+{
+	if (bHasPalette || !Desk->IsPaletteInDrawer())
+	{
+		return;
+	}
+	// v5: picked up with E; it leaves the drawer and shows as the palette icon.
+	Desk->TakePalette();
+	bHasPalette = true;
+	PickUpItem(TEXT("palette"), LOCTEXT("ToastPalette", "팔레트 획득!"));
+	ShowMessage(LOCTEXT("GotPalette", "팔레트다. 물감 두 가지를 섞어 보자."));
 }
 
 void AEscapeRoomManager::HandlePaint(AEscapePaint* Paint)
@@ -349,6 +462,12 @@ void AEscapeRoomManager::HandleSafeHandle(AEscapeSafe* Safe, const FString& Code
 		return;
 	}
 
+	if (Safe->IsOpen())
+	{
+		ShowMessage(LOCTEXT("SafeTakeKey", "금고 안에 열쇠가 있다. E로 집자."));
+		return;
+	}
+
 	const double Now = GetWorld()->GetTimeSeconds();
 	if (Now - LastHandleTime < HandleCooldownSeconds)
 	{
@@ -358,16 +477,29 @@ void AEscapeRoomManager::HandleSafeHandle(AEscapeSafe* Safe, const FString& Code
 
 	if (Code == SafeCode)
 	{
+		// v5: the door key waits inside the safe until the player takes it with E (HandleSafeKey).
 		Safe->OpenDoor();
-		bHasDoorKey = true;
-		ShowMessage(LOCTEXT("SafeOpen", "철컥! 금고 안에서 문 열쇠를 얻었다."));
-		SolveCurrentPuzzle();
+		Record(TEXT("item_found"), { { TEXT("item"), TEXT("door_key") } });
+		ShowMessage(LOCTEXT("SafeOpen", "철컥! 금고가 열렸다. 안에 열쇠가 있다! E로 집자."));
 	}
 	else
 	{
 		ShowMessage(FText::Format(LOCTEXT("SafeWrong", "{0}... 열리지 않는다."), FText::FromString(Code)));
 		WrongAttempt(Code);
 	}
+}
+
+void AEscapeRoomManager::HandleSafeKey(AEscapeSafe* Safe)
+{
+	if (CurrentPuzzle != 3 || !Safe->HasDoorKeyInside())
+	{
+		return;
+	}
+	Safe->TakeDoorKey();
+	bHasDoorKey = true;
+	PickUpItem(TEXT("door_key"), LOCTEXT("ToastDoorKey", "문 열쇠 획득!"));
+	ShowMessage(LOCTEXT("GotDoorKey", "문 열쇠다. 이제 나갈 수 있다."));
+	SolveCurrentPuzzle();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -410,7 +542,7 @@ void AEscapeRoomManager::HandleDoor(AEscapeDoor* Door)
 	OneDecimal.SetMaximumFractionalDigits(1);
 	// Set directly: ShowMessage ignores messages once escaped, so this one stays on screen.
 	// The full CSV path is shown so playtesters can find the file to send.
-	Message = FText::Format(LOCTEXT("Escaped", "탈출 성공! {0}초 · 힌트 {1}회\n결과 파일: {2}\nEsc를 누르면 종료돼요."),
+	Message = FText::Format(LOCTEXT("Escaped", "탈출 성공! {0}초 · 힌트 {1}회\n결과 파일: {2}\nEsc 메뉴에서 게임 종료를 누르면 끝나요."),
 		FText::AsNumber(TotalSeconds, &OneDecimal), HintsUsed, FText::FromString(CsvPath));
 	MessageUntil = GetWorld()->GetTimeSeconds() + 3600.0;
 }
@@ -423,7 +555,21 @@ const FEscapePuzzleConfig* AEscapeRoomManager::GetConfig(int32 Puzzle) const
 	return Puzzles.IsValidIndex(Puzzle - 1) ? &Puzzles[Puzzle - 1] : nullptr;
 }
 
-void AEscapeRoomManager::ShowHint(int32 Level)
+void AEscapeRoomManager::RequestHint()
+{
+	if (bMenuOpen || CurrentPuzzle < 1 || CurrentPuzzle > 3)
+	{
+		return;
+	}
+	if (HintLevel >= 2)
+	{
+		ShowMessage(LOCTEXT("NoMoreHints", "이 퍼즐의 힌트는 모두 봤다."));
+		return;
+	}
+	ShowHint(HintLevel + 1, true);
+}
+
+void AEscapeRoomManager::ShowHint(int32 Level, bool bRequested)
 {
 	const FEscapePuzzleConfig* Config = GetConfig(CurrentPuzzle);
 	HintLevel = Level;
@@ -432,7 +578,8 @@ void AEscapeRoomManager::ShowHint(int32 Level)
 		return;
 	}
 	++HintsUsed;
-	Record(TEXT("hint_shown"), { { TEXT("puzzle"), Itoa(CurrentPuzzle) }, { TEXT("level"), Itoa(Level) } });
+	Record(TEXT("hint_shown"), { { TEXT("puzzle"), Itoa(CurrentPuzzle) }, { TEXT("level"), Itoa(Level) },
+		{ TEXT("source"), bRequested ? TEXT("request") : TEXT("auto") } });
 
 	AddGlowTargets(Level == 1 ? Config->Hint1Tag : Config->Hint2Tag, Level == 2 && Config->bHint2Sequential);
 	const FText& Line = Level == 1 ? Config->Hint1Message : Config->Hint2Message;
@@ -441,6 +588,12 @@ void AEscapeRoomManager::ShowHint(int32 Level)
 		HintMessage = Line;
 		HintMessageUntil = GetWorld()->GetTimeSeconds() + HintMessageSeconds;
 	}
+}
+
+void AEscapeRoomManager::ClearHintMessage()
+{
+	HintMessage = FText::GetEmpty();
+	HintMessageUntil = 0.0;
 }
 
 void AEscapeRoomManager::AddGlowTargets(FName Tag, bool bSequential)
@@ -474,7 +627,8 @@ void AEscapeRoomManager::AddGlowTargets(FName Tag, bool bSequential)
 
 	if (bSequential)
 	{
-		// Frames light up smallest first; anything else keeps a stable order by name.
+		// Frames light up smallest first, which is the dial order from the left (dial n = n-th smallest frame);
+		// anything else keeps a stable order by name.
 		Groups.Sort([](const TPair<AActor*, TArray<UPrimitiveComponent*>>& L, const TPair<AActor*, TArray<UPrimitiveComponent*>>& R)
 		{
 			const AEscapeFrame* FrameL = Cast<AEscapeFrame>(L.Key);
@@ -596,37 +750,131 @@ FText AEscapeRoomManager::GetStatusText() const
 	return FText::Format(LOCTEXT("StatusWithClock", "{0}   {1}"), Status, Clock);
 }
 
-FText AEscapeRoomManager::GetInventoryText() const
+FText AEscapeRoomManager::GetHintCounterText() const
 {
-	TArray<FText> Items;
-	if (bHasDrawerKey && !bHasPalette)
-	{
-		Items.Add(LOCTEXT("ItemDrawerKey", "서랍 열쇠"));
-	}
-	if (bHasPalette && CurrentPuzzle <= 2)
-	{
-		Items.Add(LOCTEXT("ItemPalette", "팔레트"));
-	}
-	if (bHasDoorKey && !bEscaped)
-	{
-		Items.Add(LOCTEXT("ItemDoorKey", "문 열쇠"));
-	}
-	if (Items.Num() == 0)
+	if (CurrentPuzzle < 1 || CurrentPuzzle > 3)
 	{
 		return FText::GetEmpty();
 	}
-	return FText::Format(LOCTEXT("Inventory", "소지품: {0}"), FText::Join(FText::FromString(TEXT(", ")), Items));
+	return FText::Format(LOCTEXT("HintCounter", "[H] 힌트 {0}/2"), HintLevel);
 }
 
-FText AEscapeRoomManager::GetPaletteText() const
+bool AEscapeRoomManager::GetPaintSlotColor(int32 Slot, FLinearColor& OutColor) const
 {
-	if (!bHasPalette || CurrentPuzzle != 2)
+	const AEscapePaint* Paint = PaletteSlots.IsValidIndex(Slot) ? PaletteSlots[Slot].Get() : nullptr;
+	if (!Paint)
 	{
-		return FText::GetEmpty();
+		return false;
 	}
-	const AEscapePaint* First = PaletteSlots.Num() > 0 ? PaletteSlots[0].Get() : nullptr;
-	return FText::Format(LOCTEXT("Palette", "팔레트: [ {0} ] + [ {1} ]"),
-		First ? First->ColorName : LOCTEXT("EmptySlot", "  "), LOCTEXT("EmptySlot", "  "));
+	OutColor = Paint->PaintColor;
+	return true;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Esc menu
+
+AEscapeCharacter* AEscapeRoomManager::GetPlayer() const
+{
+	const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+	return PC ? Cast<AEscapeCharacter>(PC->GetPawn()) : nullptr;
+}
+
+void AEscapeRoomManager::OpenMenu()
+{
+	if (bMenuOpen)
+	{
+		return;
+	}
+	bMenuOpen = true;
+	bQuitConfirm = false;
+	MenuOpenedAt = FPlatformTime::Seconds();
+	LoggedMouseSensitivity = GetMouseSensitivity();
+	UGameplayStatics::SetGamePaused(this, true);
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+	{
+		FInputModeGameAndUI Mode;
+		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		Mode.SetHideCursorDuringCapture(false);
+		PC->SetInputMode(Mode);
+		PC->SetShowMouseCursor(true);
+	}
+	Record(TEXT("menu_opened"), { { TEXT("puzzle"), Itoa(CurrentPuzzle) } });
+}
+
+void AEscapeRoomManager::CloseMenu()
+{
+	if (!bMenuOpen)
+	{
+		return;
+	}
+	CommitMouseSensitivity();
+	bMenuOpen = false;
+	bQuitConfirm = false;
+	UGameplayStatics::SetGamePaused(this, false);
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+	{
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->SetShowMouseCursor(false);
+	}
+	Record(TEXT("menu_closed"), { { TEXT("paused_sec"), FString::Printf(TEXT("%.1f"), FPlatformTime::Seconds() - MenuOpenedAt) } });
+}
+
+void AEscapeRoomManager::RequestQuit()
+{
+	if (bMenuOpen)
+	{
+		bQuitConfirm = true;
+	}
+}
+
+void AEscapeRoomManager::CancelQuit()
+{
+	bQuitConfirm = false;
+}
+
+void AEscapeRoomManager::ConfirmQuit()
+{
+	if (!IsQuitConfirmOpen())
+	{
+		return;
+	}
+	CommitMouseSensitivity();
+	Record(TEXT("menu_closed"), { { TEXT("paused_sec"), FString::Printf(TEXT("%.1f"), FPlatformTime::Seconds() - MenuOpenedAt) } });
+	bMenuOpen = false;
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionAnalyticsSubsystem* Analytics = GameInstance->GetSubsystem<USessionAnalyticsSubsystem>())
+		{
+			Analytics->EndSession(TEXT("Quit"));
+		}
+	}
+	UKismetSystemLibrary::QuitGame(this, GetWorld()->GetFirstPlayerController(), EQuitPreference::Quit, false);
+}
+
+float AEscapeRoomManager::GetMouseSensitivity() const
+{
+	const AEscapeCharacter* Player = GetPlayer();
+	return Player ? Player->MouseSensitivity : 0.f;
+}
+
+void AEscapeRoomManager::SetMouseSensitivity(float Value)
+{
+	if (AEscapeCharacter* Player = GetPlayer())
+	{
+		// Two decimals, so the logged value is exactly what the player sees next to the slider.
+		Player->MouseSensitivity = FMath::RoundToFloat(FMath::Clamp(Value, MinMouseSensitivity, MaxMouseSensitivity) * 100.f) / 100.f;
+	}
+}
+
+void AEscapeRoomManager::CommitMouseSensitivity()
+{
+	const float Value = GetMouseSensitivity();
+	if (FMath::IsNearlyEqual(Value, LoggedMouseSensitivity, 0.001f))
+	{
+		return;
+	}
+	LoggedMouseSensitivity = Value;
+	Record(TEXT("setting_changed"), { { TEXT("key"), TEXT("mouse_sensitivity") }, { TEXT("value"), FString::Printf(TEXT("%.2f"), Value) } });
 }
 
 void AEscapeRoomManager::Record(FName Event, const TMap<FString, FString>& Params) const

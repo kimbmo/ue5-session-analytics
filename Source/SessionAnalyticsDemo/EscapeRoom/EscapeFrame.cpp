@@ -60,6 +60,16 @@ AEscapeFrame::AEscapeFrame()
 	Key->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Key->SetVisibility(false);
 
+	KeyBow = EscapeVisuals::CreatePart(this, TEXT("KeyBow"), EscapeVisuals::Cylinder);
+	KeyBow->SetupAttachment(SceneRoot);
+	KeyBow->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	KeyBow->SetVisibility(false);
+
+	KeyTooth = EscapeVisuals::CreatePart(this, TEXT("KeyTooth"), EscapeVisuals::Cube);
+	KeyTooth->SetupAttachment(SceneRoot);
+	KeyTooth->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	KeyTooth->SetVisibility(false);
+
 	Tags.Add(TEXT("P3H1"));
 	Tags.Add(TEXT("P3H2"));
 
@@ -130,9 +140,18 @@ void AEscapeFrame::Layout()
 	LabelText->SetRelativeLocation(FVector(1.4f, 0.f, LabelZ));
 	LabelText->SetText(FText::FromString(DateLabel));
 
-	Key->SetRelativeLocation(FVector(1.f, 0.f, 0.f));
-	Key->SetRelativeScale3D(FVector(0.01f, 0.10f, 0.035f));
-	EscapeVisuals::SetColor(Key, KeyColor, 0.6f);
+	// v5: key-shaped (round bow, shaft, tooth; about 16 cm wide) since it is now picked up with E.
+	Key->SetRelativeLocation(FVector(1.f, 2.f, 0.f));
+	Key->SetRelativeScale3D(FVector(0.01f, 0.10f, 0.022f));
+	KeyBow->SetRelativeLocation(FVector(1.f, -5.5f, 0.f));
+	KeyBow->SetRelativeRotation(FRotator(90.f, 0.f, 0.f));
+	KeyBow->SetRelativeScale3D(FVector(0.06f, 0.06f, 0.01f));
+	KeyTooth->SetRelativeLocation(FVector(1.f, 5.5f, -2.f));
+	KeyTooth->SetRelativeScale3D(FVector(0.01f, 0.03f, 0.035f));
+	for (UStaticMeshComponent* Part : { Key.Get(), KeyBow.Get(), KeyTooth.Get() })
+	{
+		EscapeVisuals::SetColor(Part, KeyColor, 0.6f);
+	}
 
 	LiftRoot->SetRelativeLocation(FVector(0.f, 0.f, GetLiftHeight() * LiftAlpha));
 }
@@ -141,21 +160,82 @@ void AEscapeFrame::Interact(AEscapeCharacter* Player, UPrimitiveComponent* HitCo
 {
 	if (AEscapeRoomManager* Manager = GetManager())
 	{
-		Manager->HandleFrame(this);
+		if (bKeyRevealed && IsKeyPart(HitComponent))
+		{
+			Manager->HandleFrameKey(this);
+		}
+		else
+		{
+			Manager->HandleFrame(this);
+		}
 	}
+}
+
+FText AEscapeFrame::GetPrompt(const UPrimitiveComponent* HitComponent) const
+{
+	return bKeyRevealed && IsKeyPart(HitComponent) ? LOCTEXT("TakeKeyPrompt", "열쇠 집기") : DisplayName;
 }
 
 void AEscapeFrame::Lift(bool bRevealKey)
 {
+	if (bRevealKey)
+	{
+		RevealKey();
+		return;
+	}
 	LiftTarget = 1.f;
-	DropAt = GetWorld()->GetTimeSeconds() + (bRevealKey ? 1.8 : 0.9);
-	Key->SetVisibility(bRevealKey);
+	DropAt = GetWorld()->GetTimeSeconds() + 0.9;
+	SetKeyShown(false);
+	SetActorTickEnabled(true);
+}
+
+void AEscapeFrame::SetKeyShown(bool bShown)
+{
+	for (UStaticMeshComponent* Part : { Key.Get(), KeyBow.Get(), KeyTooth.Get() })
+	{
+		Part->SetVisibility(bShown);
+		// Only traceable while it can be picked up.
+		Part->SetCollisionEnabled(bShown ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+		Part->SetCollisionResponseToAllChannels(ECR_Block);
+		if (!bShown)
+		{
+			EscapeVisuals::SetHintGlow(Part, 0.f);
+		}
+	}
+}
+
+void AEscapeFrame::RevealKey()
+{
+	bKeyRevealed = true;
+	LiftTarget = 1.f;
+	DropAt = -1.0;
+	SetKeyShown(true);
+	SetActorTickEnabled(true);
+}
+
+void AEscapeFrame::TakeKey()
+{
+	bKeyRevealed = false;
+	SetKeyShown(false);
+	LiftTarget = 0.f;
+	DropAt = -1.0;
 	SetActorTickEnabled(true);
 }
 
 void AEscapeFrame::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	if (bKeyRevealed)
+	{
+		// Soft pulse so the key reads as "take me" without a text line.
+		const double Now = GetWorld()->GetTimeSeconds();
+		const float Glow = 1.5f + 1.5f * FMath::Sin(Now * 2.0 * UE_TWO_PI);
+		for (UStaticMeshComponent* Part : { Key.Get(), KeyBow.Get(), KeyTooth.Get() })
+		{
+			EscapeVisuals::SetHintGlow(Part, Glow);
+		}
+	}
 
 	if (DropAt >= 0.0 && GetWorld()->GetTimeSeconds() >= DropAt)
 	{
@@ -168,7 +248,7 @@ void AEscapeFrame::Tick(float DeltaSeconds)
 	const float Eased = FMath::InterpEaseInOut(0.f, 1.f, LiftAlpha, 2.f);
 	LiftRoot->SetRelativeLocation(FVector(0.f, 0.f, GetLiftHeight() * Eased));
 
-	if (DropAt < 0.0 && FMath::IsNearlyEqual(LiftAlpha, LiftTarget))
+	if (!bKeyRevealed && DropAt < 0.0 && FMath::IsNearlyEqual(LiftAlpha, LiftTarget))
 	{
 		SetActorTickEnabled(false);
 	}

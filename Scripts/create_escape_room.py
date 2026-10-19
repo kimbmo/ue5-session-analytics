@@ -228,8 +228,10 @@ for fid, x, size, count, date, canvas, objs in frames:
 
 easel = spawn(bp["BP_Easel"], (-215, -215, 0), 45.0, "Easel")
 
-paints = [("red", "빨강", (0.75, 0.06, 0.05), -135.0), ("blue", "파랑", (0.04, 0.12, 0.75), -110.0),
-          ("yellow", "노랑", (0.95, 0.75, 0.05), -85.0)]
+# v4: five paints (10 possible pairs). Blue and yellow are never next to each other.
+paints = [("red", "빨강", (0.75, 0.06, 0.05), -142.0), ("blue", "파랑", (0.04, 0.12, 0.75), -126.0),
+          ("white", "하양", (0.9, 0.9, 0.88), -110.0), ("yellow", "노랑", (0.95, 0.75, 0.05), -94.0),
+          ("black", "검정", (0.03, 0.03, 0.03), -78.0)]
 for pid, name, color, x in paints:
     paint = spawn(bp["BP_Paint"], (x, -258, 80), 90.0, "Paint_" + pid)
     set_props(paint, object_id="paint_" + pid, paint_id=pid, color_name=name, display_name=name + " 물감",
@@ -253,17 +255,19 @@ ambient.set_actor_label("Light_Ambient")
 amb = ambient.get_component_by_class(unreal.PointLightComponent)
 amb.set_mobility(unreal.ComponentMobility.MOVABLE)
 amb.set_editor_property("intensity_units", unreal.LightUnits.CANDELAS)
-amb.set_editor_property("intensity", 12.0)
+amb.set_editor_property("intensity", 12.0)  # ceiling light
 amb.set_editor_property("attenuation_radius", 1000.0)
 amb.set_editor_property("source_radius", 40.0)
 ambient.set_folder_path("Lights")
 
-rect_light("Light_P1_Frames", (60, 150, 285), (60, 300, 160), 60.0, ["Light_P1"])
-rect_light("Light_P1_Desk", (0, -120, 285), (0, -250, 75), 45.0, ["Light_P1"])
-rect_light("Light_P2_Easel", (-120, -120, 285), (-150, -250, 70), 50.0, ["Light_P2"], color=(1.0, 0.9, 0.8))
-rect_light("Light_P2_Lamp", (180, 0, 285), (300, 0, 240), 25.0, ["Light_P2"], color=(0.8, 1.0, 0.85))
-rect_light("Light_P3_Safe", (-120, 100, 285), (-200, 220, 40), 50.0, ["Light_P3"], color=(1.0, 0.85, 0.65))
-rect_light("Light_P3_Frames", (60, 150, 285), (60, 300, 160), 60.0, ["Light_P3"], color=(1.0, 0.85, 0.65))
+# v4: half of v2's intensities, and inactive puzzles keep 0.6 of theirs (EscapeRoomManager.InactiveLightScale),
+# so the room changes by <=10% between puzzles and the frame wall no longer blows out when both frame lights overlap.
+rect_light("Light_P1_Frames", (60, 150, 285), (60, 300, 160), 30.0, ["Light_P1"])
+rect_light("Light_P1_Desk", (0, -120, 285), (0, -250, 75), 22.5, ["Light_P1"])
+rect_light("Light_P2_Easel", (-120, -120, 285), (-150, -250, 70), 25.0, ["Light_P2"], color=(1.0, 0.9, 0.8))
+rect_light("Light_P2_Lamp", (180, 0, 285), (300, 0, 240), 12.5, ["Light_P2"], color=(0.8, 1.0, 0.85))
+rect_light("Light_P3_Safe", (-120, 100, 285), (-200, 220, 40), 25.0, ["Light_P3"], color=(1.0, 0.85, 0.65))
+rect_light("Light_P3_Frames", (60, 150, 285), (60, 300, 160), 30.0, ["Light_P3"], color=(1.0, 0.85, 0.65))
 # The exit light sits outside the door wall. Its radius must not reach into the room: a light that only gets blocked
 # by the wall's shadow leaks through as shadow artifacts on the ceiling (seen in PIE).
 exit_light = actors.spawn_actor_from_class(unreal.PointLight, unreal.Vector(460, 0, 150), unreal.Rotator(0, 0, 0))

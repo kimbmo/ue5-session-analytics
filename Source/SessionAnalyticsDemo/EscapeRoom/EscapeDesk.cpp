@@ -16,6 +16,20 @@ namespace
 	const FLinearColor DrawerColor(0.38f, 0.25f, 0.14f);
 	const FLinearColor MetalColor(0.6f, 0.6f, 0.62f);
 	const FLinearColor PaletteColor(0.8f, 0.62f, 0.38f);
+	const FLinearColor ThumbHoleColor(0.03f, 0.02f, 0.015f);
+
+	// Painter's palette from basic shapes: a flat oval board (30 x 22 cm, 1 cm thick), a thumb hole near the front-right edge and five
+	// paint blobs along the back edge. Positions are relative to PaletteRoot (X = towards the drawer front).
+	constexpr float BoardThickness = 1.f;
+	const FVector ThumbHoleOffset(4.5f, 8.5f, BoardThickness * 0.5f + 0.05f);
+	struct FBlob { FVector Offset; FLinearColor Color; };
+	const FBlob Blobs[] = {
+		{ FVector(-1.f, -12.f, 0.75f), FLinearColor(0.75f, 0.06f, 0.05f) },
+		{ FVector(-6.5f, -7.f, 0.75f), FLinearColor(0.04f, 0.12f, 0.75f) },
+		{ FVector(-8.f, 0.f, 0.75f), FLinearColor(0.9f, 0.9f, 0.88f) },
+		{ FVector(-6.5f, 7.f, 0.75f), FLinearColor(0.95f, 0.75f, 0.05f) },
+		{ FVector(-1.f, 12.f, 0.75f), FLinearColor(0.03f, 0.03f, 0.03f) },
+	};
 }
 
 AEscapeDesk::AEscapeDesk()
@@ -50,11 +64,31 @@ AEscapeDesk::AEscapeDesk()
 	DrawerHandle->SetRelativeLocation(HandleClosed);
 	DrawerHandle->SetRelativeScale3D(FVector(0.03f, 0.14f, 0.025f));
 
-	Palette = EscapeVisuals::CreatePart(this, TEXT("Palette"), EscapeVisuals::Cube);
-	Palette->SetupAttachment(SceneRoot);
-	Palette->SetRelativeLocation(PaletteClosed);
-	Palette->SetRelativeScale3D(FVector(0.25f, 0.32f, 0.01f));
+	PaletteRoot = CreateDefaultSubobject<USceneComponent>(TEXT("PaletteRoot"));
+	PaletteRoot->SetupAttachment(SceneRoot);
+	PaletteRoot->SetRelativeLocation(PaletteClosed);
+
+	// Oval board: a flattened cylinder, wider (Y) than deep (X).
+	Palette = EscapeVisuals::CreatePart(this, TEXT("PaletteBoard"), EscapeVisuals::Cylinder);
+	Palette->SetupAttachment(PaletteRoot);
+	Palette->SetRelativeScale3D(FVector(0.22f, 0.30f, BoardThickness / 100.f));
 	Palette->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	PaletteThumbHole = EscapeVisuals::CreatePart(this, TEXT("PaletteThumbHole"), EscapeVisuals::Cylinder);
+	PaletteThumbHole->SetupAttachment(PaletteRoot);
+	PaletteThumbHole->SetRelativeLocation(ThumbHoleOffset);
+	PaletteThumbHole->SetRelativeScale3D(FVector(0.04f, 0.045f, 0.002f));
+	PaletteThumbHole->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Blobs); ++Index)
+	{
+		UStaticMeshComponent* Blob = EscapeVisuals::CreatePart(this, *FString::Printf(TEXT("PaletteBlob%d"), Index), EscapeVisuals::Sphere);
+		Blob->SetupAttachment(PaletteRoot);
+		Blob->SetRelativeLocation(Blobs[Index].Offset);
+		Blob->SetRelativeScale3D(FVector(0.045f, 0.05f, 0.012f));
+		Blob->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		PaletteBlobs.Add(Blob);
+	}
 
 	ObjectId = TEXT("desk");
 	BaseColor = DeskColor;
@@ -84,6 +118,11 @@ void AEscapeDesk::ApplyColors()
 	EscapeVisuals::SetColor(Drawer, DrawerColor);
 	EscapeVisuals::SetColor(DrawerHandle, MetalColor);
 	EscapeVisuals::SetColor(Palette, PaletteColor);
+	EscapeVisuals::SetColor(PaletteThumbHole, ThumbHoleColor);
+	for (int32 Index = 0; Index < PaletteBlobs.Num() && Index < UE_ARRAY_COUNT(Blobs); ++Index)
+	{
+		EscapeVisuals::SetColor(PaletteBlobs[Index], Blobs[Index].Color);
+	}
 }
 
 bool AEscapeDesk::IsDrawerPart(const UPrimitiveComponent* Component) const
@@ -91,13 +130,31 @@ bool AEscapeDesk::IsDrawerPart(const UPrimitiveComponent* Component) const
 	return Component && (Component == Drawer || Component == DrawerHandle);
 }
 
+bool AEscapeDesk::IsPalettePart(const UPrimitiveComponent* Component) const
+{
+	return Component && (Component == Palette || Component == PaletteThumbHole
+		|| PaletteBlobs.ContainsByPredicate([Component](const UStaticMeshComponent* Blob) { return Blob == Component; }));
+}
+
 FText AEscapeDesk::GetPrompt(const UPrimitiveComponent* HitComponent) const
 {
+	if (bPaletteInDrawer && IsPalettePart(HitComponent))
+	{
+		return LOCTEXT("TakePalettePrompt", "팔레트 집기");
+	}
 	return IsDrawerPart(HitComponent) ? DrawerName : DisplayName;
 }
 
 void AEscapeDesk::Interact(AEscapeCharacter* Player, UPrimitiveComponent* HitComponent)
 {
+	if (bDrawerOpen && bPaletteInDrawer && IsPalettePart(HitComponent))
+	{
+		if (AEscapeRoomManager* Manager = GetManager())
+		{
+			Manager->HandlePalette(this);
+		}
+		return;
+	}
 	if (!IsDrawerPart(HitComponent))
 	{
 		Super::Interact(Player, HitComponent);
@@ -112,7 +169,33 @@ void AEscapeDesk::Interact(AEscapeCharacter* Player, UPrimitiveComponent* HitCom
 void AEscapeDesk::OpenDrawer()
 {
 	bDrawerOpen = true;
+	// v5: the palette can be picked up (E) once the drawer is open.
+	for (UStaticMeshComponent* Part : GetPaletteParts())
+	{
+		Part->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		Part->SetCollisionResponseToAllChannels(ECR_Block);
+	}
 	SetActorTickEnabled(true);
+}
+
+void AEscapeDesk::TakePalette()
+{
+	bPaletteInDrawer = false;
+	for (UStaticMeshComponent* Part : GetPaletteParts())
+	{
+		Part->SetVisibility(false);
+		Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+}
+
+TArray<UStaticMeshComponent*> AEscapeDesk::GetPaletteParts() const
+{
+	TArray<UStaticMeshComponent*> Parts = { Palette.Get(), PaletteThumbHole.Get() };
+	for (UStaticMeshComponent* Blob : PaletteBlobs)
+	{
+		Parts.Add(Blob);
+	}
+	return Parts;
 }
 
 void AEscapeDesk::Tick(float DeltaSeconds)
@@ -123,7 +206,7 @@ void AEscapeDesk::Tick(float DeltaSeconds)
 	const FVector Offset(DrawerSlideDistance * FMath::InterpEaseOut(0.f, 1.f, DrawerAlpha, 2.f), 0.f, 0.f);
 	Drawer->SetRelativeLocation(DrawerClosed + Offset);
 	DrawerHandle->SetRelativeLocation(HandleClosed + Offset);
-	Palette->SetRelativeLocation(PaletteClosed + Offset);
+	PaletteRoot->SetRelativeLocation(PaletteClosed + Offset);
 
 	if (FMath::IsNearlyEqual(DrawerAlpha, bDrawerOpen ? 1.f : 0.f))
 	{
