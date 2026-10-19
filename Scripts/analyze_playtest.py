@@ -21,6 +21,8 @@ TARGET_SEC = {1: 40, 2: 60, 3: 80}   # design doc: per-puzzle target times
 TARGET_TOTAL_SEC = 180               # design doc: 3 minutes
 FAIL_TOTAL_SEC = 300                 # design doc: over 5 minutes counts as a failure
 QUICK_AFTER_HINT_SEC = 15            # solved this soon after hint 1 = hint 1 supplied the missing link
+# Events the game logs on its own; everything else is a player action (used for the idle gap).
+SYSTEM_EVENTS = {"session_start", "build_info", "puzzle_started", "hint_shown", "escaped", "session_end"}
 
 
 def split_unescaped(text, sep):
@@ -79,8 +81,16 @@ def load_session(path):
     return {"file": Path(path).name, "id": rows[0]["session_id"] if rows else "", "events": events}
 
 
+def paused_between(pauses, a, b):
+    """Seconds of Esc-menu pause inside [a, b]."""
+    return sum(max(0.0, min(b, end) - max(a, start)) for start, end in pauses)
+
+
 def summarize(session):
     started, solved = {}, {}
+    version = None
+    pauses, menu_open_at = [], None
+    hint_sources = Counter()
     wrong = defaultdict(list)
     hints = defaultdict(int)
     hint_times = defaultdict(dict)
@@ -104,25 +114,47 @@ def summarize(session):
             hints[puzzle] = max(hints[puzzle], level)
             hint_times[puzzle].setdefault(level, e["t"])
             hint_events += 1
+            # v1-v3 had only timed hints and logged no source.
+            hint_sources[p.get("source", "auto")] += 1
+        elif ev == "build_info":
+            version = p.get("version")
+        elif ev == "menu_opened":
+            menu_open_at = e["t"]
+        elif ev == "menu_closed":
+            start = menu_open_at if menu_open_at is not None else e["t"] - float(p.get("paused_sec", "0") or 0)
+            pauses.append((start, e["t"]))
+            menu_open_at = None
         elif ev == "object_inspected":
             obj = p.get("object", "?")
             inspected[obj] += 1
             first_inspect = first_inspect or obj
         elif ev == "escaped":
-            escaped = {"total": float(p.get("total_sec", e["t"])), "hints": int(p.get("hints_used", "0") or 0)}
+            escaped = {"total": float(p.get("total_sec", e["t"])), "hints": int(p.get("hints_used", "0") or 0), "t": e["t"]}
         elif ev == "session_end":
             end_reason = p.get("reason")
             # The plugin folds identical records within 0.5s into one, so this counts rapid E repeats.
             repeats = int(p.get("duplicates_suppressed", "0") or 0)
-    durations = {n: solved[n] - started[n] for n in PUZZLES if n in started and n in solved}
-    after_hint1 = {n: solved[n] - hint_times[n][1] for n in PUZZLES if n in solved and 1 in hint_times[n]}
     last_t = session["events"][-1]["t"] if session["events"] else 0.0
+    if menu_open_at is not None:
+        pauses.append((menu_open_at, last_t))
+    # Esc-menu time is not play time: take it out of puzzle and total times.
+    durations = {n: solved[n] - started[n] - paused_between(pauses, started[n], solved[n])
+                 for n in PUZZLES if n in started and n in solved}
+    paused_total = sum(end - start for start, end in pauses)
+    if escaped and pauses:
+        escaped["total"] = escaped["t"] - paused_between(pauses, 0.0, escaped["t"])
+    # Longest stretch with no player action, outside the menu (e.g. a tester writing notes).
+    action_times = [0.0] + [e["t"] for e in session["events"]
+                            if e["event"] not in SYSTEM_EVENTS or e["p"].get("source") == "request"] + [last_t]
+    idle = max((b - a - paused_between(pauses, a, b) for a, b in zip(action_times, action_times[1:])), default=0.0)
+    after_hint1 = {n: solved[n] - hint_times[n][1] for n in PUZZLES if n in solved and 1 in hint_times[n]}
     reached = max(started) if started else 0
     return {
         "file": session["file"], "durations": durations, "after_hint1": after_hint1,
         "wrong": wrong, "hints": hints, "hint_events": hint_events,
         "inspected": inspected, "first_inspect": first_inspect, "escaped": escaped,
         "end_reason": end_reason, "repeats": repeats, "last_t": last_t, "reached": reached,
+        "version": version, "paused": paused_total, "idle": idle, "hint_sources": hint_sources,
     }
 
 
@@ -143,18 +175,19 @@ def report(summaries):
     out.append(f"# 플레이테스트 결과 ({n}판)\n")
 
     out.append("## 판별 요약\n")
-    out.append("| 파일 | 결과 | 전체 | 퍼즐 1 | 퍼즐 2 | 퍼즐 3 | 오답 | 힌트 | 0.5초 안 연타 | 처음 조사한 것 |")
-    out.append("|---|---|---|---|---|---|---|---|---|---|")
+    out.append("시간은 Esc 메뉴로 멈춘 시간을 뺀 값입니다. 힌트는 요청/자동. 가장 긴 무입력은 메뉴 밖에서 플레이어 입력이 없던 가장 긴 구간입니다.\n")
+    out.append("| 파일 | 빌드 | 결과 | 전체 | 퍼즐 1 | 퍼즐 2 | 퍼즐 3 | 오답 | 힌트 | 멈춤 | 가장 긴 무입력 | 0.5초 안 연타 | 처음 조사한 것 |")
+    out.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for s in summaries:
         if s["escaped"]:
             result, total = "탈출", s["escaped"]["total"]
         else:
             result, total = f"중단 (퍼즐 {s['reached']}에서)", s["last_t"]
         wrong_total = sum(len(v) for v in s["wrong"].values())
-        hint_total = s["hint_events"]
+        hint_total = f"{s['hint_sources']['request']}/{s['hint_sources']['auto']}"
         cells = [fmt_sec(s["durations"].get(k)) for k in PUZZLES]
         repeats = "-" if s["repeats"] is None else s["repeats"]
-        out.append(f"| {s['file']} | {result} | {fmt_sec(total)} | {' | '.join(cells)} | {wrong_total} | {hint_total} | {repeats} | {s['first_inspect'] or '-'} |")
+        out.append(f"| {s['file']} | {s['version'] or '-'} | {result} | {fmt_sec(total)} | {' | '.join(cells)} | {wrong_total} | {hint_total} | {fmt_sec(s['paused'])} | {fmt_sec(s['idle'])} | {repeats} | {s['first_inspect'] or '-'} |")
     out.append("")
 
     out.append("## 퍼즐별\n")

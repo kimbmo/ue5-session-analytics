@@ -29,17 +29,19 @@ and analytics code tangled with gameplay Blueprints.
 
 ## Escape room prototype
 A 3-minute first-person escape room in a painter's studio, built to show the plugin in a real game loop.
-Three puzzles run in sequence (find, combine, order). Hints come on request (H, two levels per puzzle) with a timed
+Three puzzles run in sequence (find, combine, match by colour). Hints come on request (H, two levels per puzzle) with a timed
 safety net, and light up the relevant objects. Items (drawer key, palette, door key) are picked up with E. Every play
 session is logged to CSV by this plugin: build info, puzzle start/solve with attempt counts, wrong answers, hints
 (requested or automatic), items found and picked up, objects inspected, pause-menu use and the escape time.
 
 Current version: **v5** (iterated from playtests, see below). Screenshots of v5: `Docs/EscapeRoom/v5/`.
 
-| | | |
-|---|---|---|
-| ![Room overview](Docs/EscapeRoom/room_overview.png) | ![Hint: date labels glow](Docs/EscapeRoom/hint_date_labels.png) | ![Safe with frame-silhouette order clue](Docs/EscapeRoom/safe_silhouette_clue.png) |
-| The studio | A hint lighting up the date labels | Safe dials with a text-free order clue |
+| | |
+|---|---|
+| ![The studio](Docs/EscapeRoom/v5/00_overview_frames.png) | ![Drawer key picked up](Docs/EscapeRoom/v5/05b_key_toast.png) |
+| The studio | Picking up the drawer key (announced on screen since v5) |
+| ![Safe dials with colour plates](Docs/EscapeRoom/v5/09d_safe_clue_clean.png) | ![Hint lighting up the matching paintings](Docs/EscapeRoom/v5/10_hint_p3_sequence.png) |
+| Safe dials, each with a colour plate that matches a painting | A hint lighting up the matching paintings one by one |
 
 - **Play:** open the project in **UE 5.8** (the escape-room assets are saved in 5.8), open `Content/EscapeRoom/L_Studio`, press Play and click the viewport. WASD to move, mouse to look, E to interact, H for a hint, Esc for the pause menu.
 - **Code:** all gameplay logic is C++ in `Source/SessionAnalyticsDemo/EscapeRoom` (room manager, interactables, character, HUD).
@@ -48,11 +50,12 @@ Current version: **v5** (iterated from playtests, see below). Screenshots of v5:
   (including hint requests, the pause menu and quitting through it), takes screenshots into `Saved/Screenshots/EscapeRoom/` and leaves a full CSV.
   `topview` only takes a plan view. `Scripts/create_escape_room.py` rebuilds the level headless.
 - **Guide (Korean):** `Content/EscapeRoom/README_EscapeRoom.md` explains the class roles, tuning values, events and how to play.
-- **Playtests:** `Docs/Playtest/` holds the raw CSVs (v1: 3 plays, v2: 1, v4: 1, v5: 1), the v1 analysis (`analysis_v1.md`) and the change list of each
+- **Playtests:** `Docs/Playtest/` holds the raw CSVs (v1: 3 plays, v2: 1, v3: 1, v4: 1, v5: 1; one new tester per play, numbered 1-7), the v1 analysis (`analysis_v1.md`) and the change list of each
   version (`changes_v2.md`, `changes_v4_workpc.md`, `changes_v5.md`). Each change ties a playtest finding to a change, e.g. v4: a player held the
-  drawer key for 82 s without noticing it → v5: keys are picked up with E and announced on screen → 2.1 s in the next play.
+  drawer key for 83 s without noticing it → v5: keys are picked up with E and announced on screen → 2.1 s in the next play.
   Rerun the summary with `python Scripts/analyze_playtest.py Docs/Playtest/data/v1` (or another version folder).
-  v3 and the first v4 were built on another machine and never pushed; v4 was rebuilt to the same spec (`changes_v4_workpc.md`).
+  v3 and the first v4 were built on another machine and their code was never pushed (the v3 playtest CSV is included);
+  v4 was rebuilt to the same spec (`changes_v4_workpc.md`).
 
 ## Install
 1. Copy `Plugins/SessionAnalytics` from this repo to `<YourProject>/Plugins/SessionAnalytics`.

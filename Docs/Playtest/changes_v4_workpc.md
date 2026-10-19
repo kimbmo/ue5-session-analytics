@@ -1,6 +1,6 @@
-# v4 변경 사항 (회사 PC 재구축, 2026-10-19)
+# v4 변경 사항 (두 번째 PC에서 다시 만듦, 2026-10-19)
 
-집 PC에서 만든 v3/v4는 push되지 않아, 같은 규칙과 값으로 main(v2, `d60b3ff`)에서 다시 만들었다.
+첫 번째 PC에서 만든 v3/v4는 push되지 않아, 같은 규칙과 값으로 main(v2, `d60b3ff`)에서 다시 만들었다.
 엔진 UE 5.8.3, VS 2022 Professional 17.14. 빌드 구분: CSV 첫 줄 다음의 `build_info`가 `build=work-pc;version=v4`.
 
 | 영역 | v2 | v4 (work-pc) |
